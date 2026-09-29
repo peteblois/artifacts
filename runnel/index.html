@@ -97,7 +97,8 @@ void main(){
   float damp = mix(.86, .985, smoothstep(.02, .8, s.y));
   vec4 nf = max(vec4(0.), f*damp + DT*9.81*vec4(hc-hL, hc-hR, hc-hB, hc-hT));
   float sum = nf.x + nf.y + nf.z + nf.w;
-  if (sum > 0.) nf *= min(1., s.y/(sum*DT));
+  // a film thinner than this clings to the sand instead of creeping outward
+  if (sum > 0.) nf *= min(1., max(s.y - .03, 0.)/(sum*DT));
   o = nf;
 }`;
 // 2. Move the water, derive velocity, then erode or deposit against the flow's carrying capacity.
@@ -127,7 +128,8 @@ void main(){
   float b = s.x, sed = s.z;
   if (C > sed) { float a = min(min(KS*(C - sed), .02), max(b, 0.)); b -= a; sed += a; }
   else { float a = KD*(sed - C); b += a; sed -= a; }
-  d = max(0., d - DT*.0006);
+  // the sand soaks up thin water; deep channel water barely notices
+  d = max(0., d - DT*(.0006 + .004*(1. - smoothstep(.05, .45, sp)) + .03*(1. - smoothstep(.0, .12, d))*d));
   if (p.y == 0) sed *= .5;
   float wet = max(s.w - DT*.0035, step(.012, d));
   o0 = vec4(b, d, sed, wet);
