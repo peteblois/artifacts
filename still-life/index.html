@@ -53,11 +53,11 @@ h1 i { color: var(--accent); }
 @media (max-width: 860px) { .stage { grid-template-columns: minmax(0, 1fr); } }
 
 .plate { position: relative; min-width: 0; }
-.plate canvas { display: block; width: 100%; aspect-ratio: 1; max-width: 100%; touch-action: none; cursor: crosshair; background: var(--sheet); box-shadow: 0 1px 0 var(--rule), 0 18px 40px -28px rgba(0,0,0,.45); }
+.plate canvas { display: block; width: min(100%, max(280px, calc(100svh - 150px))); margin-inline: auto; aspect-ratio: 1; max-width: 100%; touch-action: none; cursor: crosshair; background: var(--sheet); box-shadow: 0 1px 0 var(--rule), 0 18px 40px -28px rgba(0,0,0,.45); }
 .plate canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
-.plate figcaption { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 10px; font: 12px/1.4 var(--f-mono); color: var(--muted); }
+.plate figcaption { width: min(100%, max(280px, calc(100svh - 150px))); margin-inline: auto; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 10px; font: 12px/1.4 var(--f-mono); color: var(--muted); }
 .toast {
-  position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%);
+  position: absolute; left: 50%; top: 16px; transform: translateX(-50%);
   background: var(--ink); color: var(--sheet); padding: 8px 14px; font: italic 17px/1.3 var(--f-display);
   max-width: calc(100% - 32px); text-align: center; pointer-events: none; opacity: 0; transition: opacity .6s;
 }
@@ -78,8 +78,10 @@ aside { display: grid; gap: 22px; min-width: 0; }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--sheet); }
 button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
-.swatches button { aspect-ratio: 1; border: 1px solid var(--rule); cursor: pointer; padding: 0; border-radius: 50%; position: relative; }
+.tools { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin: 12px auto 0; width: min(100%, max(280px, calc(100svh - 150px))); }
+.tools .pick { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.swatches { display: flex; gap: 8px; }
+.swatches button { width: 34px; height: 34px; flex: none; border: 1px solid var(--rule); cursor: pointer; padding: 0; border-radius: 50%; position: relative; }
 .swatches button[aria-pressed="true"]::after { content: ""; position: absolute; inset: -5px; border: 1.5px solid var(--ink); border-radius: 50%; }
 .pigname { font: italic 17px/1.2 var(--f-display); }
 
@@ -150,6 +152,13 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     <figure class="plate" style="margin:0">
       <canvas id="world" tabindex="0" aria-label="The paper. Click or tap to plant cells; arrow keys and Enter also work."></canvas>
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      <div class="tools">
+        <div class="pick">
+          <div class="swatches" id="swatches" role="group" aria-label="Pigment"></div>
+          <span class="pigname" id="pigname"></span>
+        </div>
+        <span class="notions" id="notions" aria-label="Notions available"></span>
+      </div>
       <figcaption><span id="pop">0 living cells</span><span>96 × 96 cells · edges wrap</span></figcaption>
     </figure>
 
@@ -175,13 +184,8 @@ button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
       </div>
 
       <div class="sec">
-        <div class="label">Pigment <span class="pigname" id="pigname" style="text-transform:none;letter-spacing:0;color:var(--ink)"></span></div>
-        <div class="swatches" id="swatches" role="group" aria-label="Pigment"></div>
-      </div>
-
-      <div class="sec">
-        <div class="label">Notions <span class="notions" id="notions" aria-label="Notions available"></span></div>
-        <p class="hint" id="notionhint">Each planting spends a notion. New ones come slowly, and more slowly with age.</p>
+        <div class="label">What to plant</div>
+        <p class="hint" id="notionhint">Each planting spends a notion (the dots under the paper). New ones come slowly, and more slowly with age.</p>
         <div class="forms" id="forms" role="group" aria-label="Form to plant"></div>
       </div>
 
