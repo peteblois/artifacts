@@ -101,11 +101,11 @@ void main(){
   float hT = p.y < g.y-1 ? H(p + ivec2(0, 1)) : 1e4;
   vec4 f = texelFetch(FL, p, 0);
   // bed friction: thin sheets of water drag on the sand far more than deep channels do
-  float damp = mix(.86, .985, smoothstep(.02, .8, s.y));
+  float damp = mix(.8, .988, smoothstep(.03, .9, s.y));
   vec4 nf = max(vec4(0.), f*damp + DT*9.81*vec4(hc-hL, hc-hR, hc-hB, hc-hT));
   float sum = nf.x + nf.y + nf.z + nf.w;
   // a film thinner than this clings to the sand instead of creeping outward
-  if (sum > 0.) nf *= min(1., max(s.y - .03, 0.)/(sum*DT));
+  if (sum > 0.) nf *= min(1., max(s.y - .045, 0.)/(sum*DT));
   o = nf;
 }`;
 // 2. Move the water, derive velocity, then erode or deposit against the flow's carrying capacity.
@@ -131,7 +131,8 @@ void main(){
   vec2 gb = vec2(B(p + ivec2(1, 0)) - B(p + ivec2(-1, 0)), B(p + ivec2(0, 1)) - B(p + ivec2(0, -1)))*.5;
   float sl = length(gb), sinA = sl/sqrt(1. + sl*sl);
   // stream power: deep, fast water carries far more than a thin sheet, so flow that gathers cuts deeper and gathers more
-  float C = KC*length(v)*min(d, 1.2)*(.4 + 3.*sinA);
+  float dd = min(d, 1.2);
+  float C = KC*2.*length(v)*dd*dd*(.4 + 3.*sinA);
   float b = s.x, sed = s.z;
   if (C > sed) { float a = min(min(KS*(C - sed), .02), max(b, 0.)); b -= a; sed += a; }
   else { float a = KD*(sed - C); b += a; sed -= a; }
@@ -163,7 +164,7 @@ void main(){
   vec2 v = texelFetch(VEL, p, 0).xy;
   float sed = bil(gl_FragCoord.xy - v*DT).z;
   float b = s.x;
-  float T = s.y > .01 ? mix(.5, .28, clamp(length(v)/2., 0., 1.)) : .75;
+  float T = s.y > .01 ? mix(.62, .45, clamp(length(v)/2., 0., 1.)) : .75;
   // slump toward all eight neighbours, diagonals at their true distance, so piles settle into round cones
   float acc = 0.;
   for (int k = 0; k < 8; k++) {
@@ -311,7 +312,7 @@ function reset(newSeed) {
 }
 
 // ---------- state ----------
-let Q = .6, srcOff = 0, time = 0, brush = [0, 0, 7, 0];
+let Q = .45, srcOff = 0, time = 0, brush = [0, 0, 7, 0];
 const hand = { down: false, x: 0, y: 0, px: 0, py: 0, dig: false, push: false };
 let pushU = [0, 0, 0, 0];
 let tool = 'pile', shift = false, flowLevel = 0, wetShare = 0;
@@ -326,7 +327,7 @@ function step(applyBrush) {
   // water + erosion
   gl.useProgram(P.water.p); u = P.water.u; common(u);
   gl.uniform1f(u.DT, DT); gl.uniform1f(u.Q, Q); gl.uniform1f(u.SRC, meander(GH - 1) + srcOff);
-  gl.uniform1f(u.KC, 1.2); gl.uniform1f(u.KS, .02); gl.uniform1f(u.KD, .006);
+  gl.uniform1f(u.KC, 1.2); gl.uniform1f(u.KS, .025); gl.uniform1f(u.KD, .003);
   bind(0, stA, u.ST); bind(1, flA, u.FL); run(P.water, fStB_vel, GW, GH);
   // sediment + slumping + hand
   gl.useProgram(P.sedi.p); u = P.sedi.u; common(u); gl.uniform1f(u.DT, DT);
