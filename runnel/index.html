@@ -52,7 +52,7 @@ const gl = canvas.getContext('webgl2', { antialias: false, alpha: false });
 if (!gl || !gl.getExtension('EXT_color_buffer_float')) { $('fallback').hidden = false; return; }
 const LINEAR_OK = !!gl.getExtension('OES_texture_float_linear');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
-const STEPS = REDUCED ? 3 : 6;
+const STEPS = REDUCED ? 2 : 3;
 const DT = .08;
 
 // ---------- shaders ----------
@@ -146,13 +146,16 @@ void main(){
   float sed = bil(gl_FragCoord.xy - v*DT).z;
   float b = s.x;
   float T = s.y > .02 ? .45 : .75;
+  // slump toward all eight neighbours, diagonals at their true distance, so piles settle into round cones
   float acc = 0.;
-  for (int k = 0; k < 4; k++) {
-    ivec2 o = k == 0 ? ivec2(1, 0) : k == 1 ? ivec2(-1, 0) : k == 2 ? ivec2(0, 1) : ivec2(0, -1);
+  for (int k = 0; k < 8; k++) {
+    ivec2 o = k == 0 ? ivec2(1, 0) : k == 1 ? ivec2(-1, 0) : k == 2 ? ivec2(0, 1) : k == 3 ? ivec2(0, -1)
+            : k == 4 ? ivec2(1, 1) : k == 5 ? ivec2(-1, -1) : k == 6 ? ivec2(1, -1) : ivec2(-1, 1);
+    float dist = k < 4 ? 1. : 1.41421;
     float dl = B(p + o) - b;
-    acc += sign(dl)*max(abs(dl) - T, 0.);
+    acc += sign(dl)*max(abs(dl) - T*dist, 0.)/(dist*dist);
   }
-  b += .1*acc;
+  b += .075*acc;
   if (BR.w != 0.) { float dd = length(gl_FragCoord.xy - BR.xy); b += BR.w*exp(-dd*dd/(BR.z*BR.z)); }
   if (gl_FragCoord.y > G.y - 10.) b = mix(b, base(gl_FragCoord.xy), .02);
   o = vec4(max(b, 0.), s.y, max(sed, 0.), s.w);
@@ -192,13 +195,13 @@ void main(){
     vec2 gh = vec2(Hr - Hl, Ht - Hb)*.5;
     vec2 v = texture(VEL, uv).xy;
     float sp = length(v);
-    float ph = TIME*.6, p1 = fract(ph), p2 = fract(ph + .5), w = abs(p1*2. - 1.);
+    float ph = TIME*.35, p1 = fract(ph), p2 = fract(ph + .5), w = abs(p1*2. - 1.);
     vec2 q1 = c*.32 - v*p1*1.6, q2 = c*.32 - v*p2*1.6 + 7.3;
     vec2 rip = mix(gradN(q1), gradN(q2), w)*(.05 + min(sp, 2.5)*.1);
     vec3 N = normalize(vec3(-(gh*1.6 + rip), 1.));
     vec3 bed = sand(uv + N.xy*min(d, 3.)*.0045);
     vec2 cq = c*.22 + N.xy*2.;
-    float cz = pow(1. - abs(n2(cq + TIME*.35) - n2(cq*1.3 - TIME*.28 + 4.)), 7.);
+    float cz = pow(1. - abs(n2(cq + TIME*.18) - n2(cq*1.3 - TIME*.14 + 4.)), 7.);
     bed += vec3(1., .93, .78)*cz*.45*exp(-d*.7)*smoothstep(.0, .15, d);
     float turb = clamp(s.z*5., 0., 1.);
     vec3 T = exp(-d*mix(vec3(.5, .22, .17), vec3(.3, .38, .5), turb)*1.3);
@@ -406,7 +409,7 @@ function touched() { lastTouch = performance.now(); }
 let last = performance.now(), born = performance.now(), measureAt = 0;
 function frame(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now; time += dt;
-  srcOff = Math.sin(time * .05) * GW * .03 + Math.sin(time * .013 + 2) * GW * .02;
+  srcOff = Math.sin(time * .03) * GW * .03 + Math.sin(time * .013 + 2) * GW * .02;
   const dig = hand.dig || (hand.down && shift);
   brush = [hand.x, hand.y, Math.max(4, GW * .018), hand.down ? (dig ? -.45 : .3) * dt * 60 : 0];
   for (let i = 0; i < STEPS; i++) step(i === 0 && hand.down);
