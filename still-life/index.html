@@ -1,0 +1,777 @@
+<title>Still Life</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English:ital@0;1&family=Work+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a naturalist's plate. The painted sheet on the left, field notes beside it, the catalogue of forms beneath. */
+:root {
+  --paper: #e4e6dd;
+  --sheet: #f0f1ea;
+  --ink: #22251e;
+  --muted: #62675b;
+  --rule: #c3c7b8;
+  --accent: #9a2e39;
+  --ghost: rgba(34, 37, 30, .32);
+  --f-display: "IM Fell English", "Iowan Old Style", Georgia, serif;
+  --f-body: "Work Sans", system-ui, -apple-system, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  --dark: 0;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #13161a; --sheet: #1a1e23; --ink: #dedfd4; --muted: #9195a0; --rule: #2d333b;
+    --accent: #e38a93; --ghost: rgba(222, 223, 212, .38); --dark: 1; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #13161a; --sheet: #1a1e23; --ink: #dedfd4; --muted: #9195a0; --rule: #2d333b;
+  --accent: #e38a93; --ghost: rgba(222, 223, 212, .38); --dark: 1; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--paper); color: var(--ink);
+  font: 400 15px/1.55 var(--f-body);
+  padding-inline: 16px; padding-block: 28px 56px;
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 28px; }
+
+header { display: grid; gap: 14px; }
+.titlerow { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; }
+h1 { font: 400 44px/1 var(--f-display); margin: 0; letter-spacing: -.01em; }
+h1 i { color: var(--accent); }
+.lede { margin: 0; color: var(--muted); max-width: 62ch; text-wrap: pretty; }
+.age { font: 500 13px/1 var(--f-mono); font-variant-numeric: tabular-nums; color: var(--muted); letter-spacing: .02em; }
+.age b { color: var(--ink); font-weight: 500; }
+.lifebar { position: relative; height: 14px; }
+.lifebar .track { position: absolute; left: 0; right: 0; top: 6px; height: 1px; background: var(--rule); }
+.lifebar .fill { position: absolute; left: 0; top: 5px; height: 3px; background: var(--ink); width: 0; }
+.lifebar .tick { position: absolute; top: 2px; width: 1px; height: 10px; background: var(--rule); }
+.lifebar .tick span { position: absolute; top: 12px; left: -8px; font: 10px/1 var(--f-mono); color: var(--muted); }
+
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; align-items: start; }
+@media (max-width: 860px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+
+.plate { position: relative; min-width: 0; }
+.plate canvas { display: block; width: 100%; aspect-ratio: 1; max-width: 100%; touch-action: none; cursor: crosshair; background: var(--sheet); box-shadow: 0 1px 0 var(--rule), 0 18px 40px -28px rgba(0,0,0,.45); }
+.plate canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.plate figcaption { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 10px; font: 12px/1.4 var(--f-mono); color: var(--muted); }
+.toast {
+  position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%);
+  background: var(--ink); color: var(--sheet); padding: 8px 14px; font: italic 17px/1.3 var(--f-display);
+  max-width: calc(100% - 32px); text-align: center; pointer-events: none; opacity: 0; transition: opacity .6s;
+}
+.toast.show { opacity: 1; }
+
+aside { display: grid; gap: 22px; min-width: 0; }
+.sec { display: grid; gap: 10px; }
+.label { font: 600 11px/1 var(--f-body); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.label em { font: 400 12px/1 var(--f-mono); letter-spacing: 0; text-transform: none; font-style: normal; }
+.status { font: italic 24px/1.2 var(--f-display); margin: 0; }
+.facts { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0; font-size: 13px; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; font: 13px/1.55 var(--f-mono); font-variant-numeric: tabular-nums; text-align: right; }
+
+.seg { display: grid; grid-template-columns: repeat(4, 1fr); border: 1px solid var(--rule); }
+.seg button { font: 500 13px/1 var(--f-body); padding: 10px 4px; background: transparent; color: var(--ink); border: 0; border-left: 1px solid var(--rule); cursor: pointer; }
+.seg button:first-child { border-left: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--sheet); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.swatches button { aspect-ratio: 1; border: 1px solid var(--rule); cursor: pointer; padding: 0; border-radius: 50%; position: relative; }
+.swatches button[aria-pressed="true"]::after { content: ""; position: absolute; inset: -5px; border: 1.5px solid var(--ink); border-radius: 50%; }
+.pigname { font: italic 17px/1.2 var(--f-display); }
+
+.forms { display: grid; gap: 0; border-top: 1px solid var(--rule); }
+.forms button {
+  display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; text-align: left; padding: 8px 2px; background: transparent;
+  border: 0; border-bottom: 1px solid var(--rule); color: var(--ink); cursor: pointer; font: inherit;
+}
+.forms button .n { font-weight: 500; font-size: 14px; }
+.forms button .k { font: 11px/1.6 var(--f-mono); color: var(--muted); }
+.forms button .d { grid-column: 1 / -1; font-size: 12px; color: var(--muted); }
+.forms button[aria-pressed="true"] .n::before { content: "▸ "; color: var(--accent); }
+.forms button:disabled { cursor: default; opacity: .55; }
+.notions { display: flex; gap: 6px; align-items: center; }
+.notions i { width: 11px; height: 11px; border-radius: 50%; border: 1.5px solid var(--ink); display: block; }
+.notions i.on { background: var(--ink); }
+.hint { font-size: 12px; color: var(--muted); margin: 0; }
+
+.margin { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.margin li { display: grid; grid-template-columns: 44px 1fr; gap: 8px; font: italic 15px/1.35 var(--f-display); }
+.margin li span { font: 11px/1.9 var(--f-mono); font-style: normal; color: var(--muted); font-variant-numeric: tabular-nums; }
+.margin li:nth-child(n+4) { opacity: .6; }
+.margin li:nth-child(n+6) { opacity: .35; }
+
+.journal h2, .past h2 { font: 400 28px/1.1 var(--f-display); margin: 0; }
+.journal header, .past header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; border-bottom: 1px solid var(--ink); padding-bottom: 8px; }
+.journal header p, .past header p { margin: 0; font: 12px/1.4 var(--f-mono); color: var(--muted); }
+.entries { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 0; }
+.entry { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 12px; padding: 14px 12px 14px 0; border-bottom: 1px solid var(--rule); align-content: start; }
+.entry canvas { width: 56px; height: 56px; background: var(--sheet); display: block; }
+.entry .nm { font: 400 19px/1.1 var(--f-display); margin: 0 0 2px; }
+.entry .meta { font: 11px/1.4 var(--f-mono); color: var(--muted); margin: 0 0 4px; }
+.entry .nt { font-size: 13px; margin: 0; line-height: 1.4; }
+.entry.unk .nm { color: var(--muted); font-style: italic; }
+.entry.unk canvas { opacity: .5; }
+
+.past[hidden] { display: none; }
+.past { display: grid; gap: 14px; }
+.lives { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 18px; }
+.lives figure { margin: 0; display: grid; gap: 6px; }
+.lives img { width: 100%; aspect-ratio: 1; display: block; background: var(--sheet); }
+.lives figcaption { font: italic 14px/1.25 var(--f-display); }
+.lives figcaption span { display: block; font: 11px/1.5 var(--f-mono); font-style: normal; color: var(--muted); }
+
+.end[hidden] { display: none !important; }
+.end { position: fixed; inset: 0; background: color-mix(in srgb, var(--paper) 88%, transparent); display: grid; place-items: center; padding: 24px 16px; z-index: 10; overflow-y: auto; }
+.end .card { background: var(--sheet); max-width: 720px; width: 100%; padding: 28px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; box-shadow: 0 30px 60px -30px rgba(0,0,0,.5); }
+@media (max-width: 640px) { .end .card { grid-template-columns: minmax(0, 1fr); padding: 20px; } }
+.end img { width: 100%; aspect-ratio: 1; display: block; }
+.end h2 { font: italic 30px/1.1 var(--f-display); margin: 0 0 6px; text-wrap: balance; }
+.end .sub { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+.end .go { margin-top: 18px; font: 500 14px/1 var(--f-body); padding: 12px 18px; background: var(--ink); color: var(--sheet); border: 0; cursor: pointer; }
+
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="titlerow">
+      <h1>Still <i>Life</i></h1>
+      <div class="age" id="age">Year <b>0</b> · week <b>0</b></div>
+    </div>
+    <p class="lede">Plant a few cells in a pigment of your choosing, then sit with them for eighty years. The living ones follow Conway's rules. The dead ones stain the paper. The longer you leave it alone, the deeper the colour sets.</p>
+    <div class="lifebar" id="lifebar" aria-hidden="true"><div class="track"></div><div class="fill" id="lifefill"></div></div>
+  </header>
+
+  <div class="stage">
+    <figure class="plate" style="margin:0">
+      <canvas id="world" tabindex="0" aria-label="The paper. Click or tap to plant cells; arrow keys and Enter also work."></canvas>
+      <div class="toast" id="toast" role="status" aria-live="polite"></div>
+      <figcaption><span id="pop">0 living cells</span><span>96 × 96 cells · edges wrap</span></figcaption>
+    </figure>
+
+    <aside>
+      <div class="sec">
+        <div class="label">Now</div>
+        <p class="status" id="status">Something is happening.</p>
+        <dl class="facts">
+          <dt>Sat still for</dt><dd id="still">0 weeks</dd>
+          <dt>Colour sets at</dt><dd id="depth">1.00×</dd>
+          <dt>Born / died</dt><dd id="bd">0 / 0</dd>
+        </dl>
+      </div>
+
+      <div class="sec">
+        <div class="label">Pace <em>space pauses</em></div>
+        <div class="seg" id="pace" role="group" aria-label="Pace">
+          <button data-s="0" aria-pressed="false">Pause</button>
+          <button data-s="1" aria-pressed="true">Watch</button>
+          <button data-s="2" aria-pressed="false">Drift</button>
+          <button data-s="3" aria-pressed="false">Sleep</button>
+        </div>
+      </div>
+
+      <div class="sec">
+        <div class="label">Pigment <span class="pigname" id="pigname" style="text-transform:none;letter-spacing:0;color:var(--ink)"></span></div>
+        <div class="swatches" id="swatches" role="group" aria-label="Pigment"></div>
+      </div>
+
+      <div class="sec">
+        <div class="label">Notions <span class="notions" id="notions" aria-label="Notions available"></span></div>
+        <p class="hint" id="notionhint">Each planting spends a notion. New ones come slowly, and more slowly with age.</p>
+        <div class="forms" id="forms" role="group" aria-label="Form to plant"></div>
+      </div>
+
+      <div class="sec">
+        <div class="label">Margin</div>
+        <ol class="margin" id="margin"></ol>
+      </div>
+    </aside>
+  </div>
+
+  <section class="journal">
+    <header><h2>Field journal</h2><p id="jcount">0 of 15 forms recorded</p></header>
+    <div class="entries" id="entries"></div>
+  </section>
+
+  <section class="past" id="past" hidden>
+    <header><h2>Past lives</h2><p>kept in this browser only</p></header>
+    <div class="lives" id="lives"></div>
+  </section>
+</div>
+
+<div class="end" id="end" hidden>
+  <div class="card" role="dialog" aria-modal="true" aria-labelledby="endtitle">
+    <img id="endimg" alt="The finished painting">
+    <div>
+      <div class="label" style="margin-bottom:10px">Eighty years</div>
+      <h2 id="endtitle"></h2>
+      <p class="sub" id="endsub"></p>
+      <dl class="facts" id="endfacts"></dl>
+      <button class="go" id="again">Begin another life</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+const W = 96, H = 96, N = W * H;
+const WEEKS = 52, YEARS = 80, LIFE = WEEKS * YEARS;
+const PACES = [0, 8, 24, 60];
+
+const PIGMENTS = [
+  { name: 'Madder lake', c: [0.62, 0.17, 0.22] },
+  { name: 'Woad', c: [0.20, 0.33, 0.56] },
+  { name: 'Weld', c: [0.80, 0.63, 0.14] },
+  { name: 'Verdigris', c: [0.20, 0.54, 0.47] },
+  { name: 'Burnt umber', c: [0.43, 0.27, 0.16] },
+  { name: 'Tyrian purple', c: [0.44, 0.15, 0.35] },
+];
+
+const FORMS = [
+  { id: 'scatter', name: 'Scatter', note: 'A loose handful. Anything could happen.', need: 0 },
+  { id: 'r', name: 'R-pentomino', note: 'Five cells. On open ground, 1,103 weeks of trouble.', need: 3, cells: [[1,0],[2,0],[0,1],[1,1],[1,2]] },
+  { id: 'glider', name: 'Glider', note: 'Sends something walking across the paper.', needForm: 'glider', cells: [[1,0],[2,1],[0,2],[1,2],[2,2]] },
+  { id: 'acorn', name: 'Acorn', note: 'Seven cells, 5,206 weeks of consequence.', need: 6, cells: [[1,0],[3,1],[0,2],[1,2],[4,2],[5,2],[6,2]] },
+  { id: 'pi', name: 'Pi-heptomino', note: 'Opens like a flower, then forgets how.', need: 9, cells: [[0,0],[1,0],[2,0],[0,1],[2,1],[0,2],[2,2]] },
+  { id: 'diehard', name: 'Diehard', note: 'Busy for 130 weeks, then gone entirely.', need: 12, cells: [[6,0],[0,1],[1,1],[1,2],[5,2],[6,2],[7,2]] },
+];
+
+const CATALOG = [
+  { id: 'block', name: 'Block', kind: 'still life', phases: [['##','##']], note: 'Four cells holding each other up. It will outlast you.' },
+  { id: 'beehive', name: 'Beehive', kind: 'still life', phases: [['.##.','#..#','.##.']], note: 'Six cells around a hollow. Common as sparrows.' },
+  { id: 'blinker', name: 'Blinker', kind: 'oscillator, period 2', phases: [['###']], note: 'Three in a row, then three in a column, for ever.' },
+  { id: 'loaf', name: 'Loaf', kind: 'still life', phases: [['.##.','#..#','.#.#','..#.']], note: 'A beehive with one corner pressed in.' },
+  { id: 'boat', name: 'Boat', kind: 'still life', phases: [['##.','#.#','.#.']], note: 'A block with its stern opened. Goes nowhere.' },
+  { id: 'tub', name: 'Tub', kind: 'still life', phases: [['.#.','#.#','.#.']], note: 'Four cells around an empty middle.' },
+  { id: 'ship', name: 'Ship', kind: 'still life', phases: [['##.','#.#','.##']], note: 'Twice the hull of a boat. Also goes nowhere.' },
+  { id: 'pond', name: 'Pond', kind: 'still life', phases: [['.##.','#..#','#..#','.##.']], note: 'Eight cells ringing a still interior.' },
+  { id: 'toad', name: 'Toad', kind: 'oscillator, period 2', phases: [['.###','###.'], ['..#.','#..#','#..#','.#..']], note: 'Two offset rows, breathing in and out.' },
+  { id: 'beacon', name: 'Beacon', kind: 'oscillator, period 2', phases: [['##..','##..','..##','..##'], ['##..','#...','...#','..##']], note: 'Two blocks signalling across a corner.' },
+  { id: 'longboat', name: 'Long boat', kind: 'still life', phases: [['##..','#.#.','.#.#','..#.']], note: 'A boat that kept going, then stopped.' },
+  { id: 'barge', name: 'Barge', kind: 'still life', phases: [['.#..','#.#.','.#.#','..#.']], note: 'A tub stretched along a diagonal.' },
+  { id: 'snake', name: 'Snake', kind: 'still life', phases: [['##.#','#.##']], note: 'Six cells in a kink. Never moves.' },
+  { id: 'glider', name: 'Glider', kind: 'spaceship, period 4', phases: [['.#.','..#','###'], ['#.#','.##','.#.'], ['..#','#.#','.##'], ['#..','.##','##.']], note: 'Five cells that walk. It will leave one edge and come back at the other.' },
+  { id: 'pulsar', name: 'Pulsar', kind: 'oscillator, period 3', phases: [[
+    '..###...###..','.............','#....#.#....#','#....#.#....#','#....#.#....#','..###...###..','.............',
+    '..###...###..','#....#.#....#','#....#.#....#','#....#.#....#','.............','..###...###..']], note: 'Forty-eight cells in a three-beat pulse. Rarely seen in the wild.' },
+];
+
+const REVERIES = [
+  'The radiator ticks.', 'A fly walks the length of the windowsill.', 'You count the ceiling tiles. Forty-two again.',
+  'Next door, someone practises the same four bars.', 'The light has moved one floorboard over.', 'A car idles outside, then doesn’t.',
+  'You notice the clock has a sound.', 'Rain starts. Rain stops.', 'In another room the kettle clicks off.',
+  'You think about calling someone.', 'Dust turns in the window light.', 'The fridge hums just under B flat.',
+  'A pigeon lands, considers, leaves.', 'You fold the corner of a page you aren’t reading.', 'Your foot has gone to sleep.',
+  'A cloud the shape of nothing in particular.', 'You wonder what time it is. It is later.', 'Somewhere a dog, briefly.',
+  'The tap drips in no rhythm at all.', 'You line the pencils up by length.', 'The afternoon goes on being the afternoon.',
+  'You almost remember a dream.', 'A moth sleeps on the lampshade.', 'Nothing happens, and you watch it happen.',
+  'The same bus goes past. It is a different bus.', 'You press a thumbnail into the table edge.', 'A spider rebuilds the corner.',
+];
+const STAGES = {
+  5: 'Five. The days are very long.', 13: 'Thirteen. Everything is boring.', 21: 'Twenty-one. Something is about to happen, surely.',
+  30: 'Thirty. You start to like the quiet parts.', 45: 'Forty-five. The afternoons fold into each other.',
+  60: 'Sixty. You notice the same things again, differently.', 72: 'Seventy-two. You know most of the shapes by name.',
+  79: 'Seventy-nine. The light is very good today.',
+};
+
+// ---------- state ----------
+let cells = new Uint8Array(N), nextCells = new Uint8Array(N);
+let pr = new Float32Array(N), pg = new Float32Array(N), pb = new Float32Array(N);
+let npr = new Float32Array(N), npg = new Float32Array(N), npb = new Float32Array(N);
+let sr = new Float32Array(N), sg = new Float32Array(N), sb = new Float32Array(N), sw = new Float32Array(N);
+const grain = new Float32Array(N);
+for (let i = 0; i < N; i++) grain[i] = 0.82 + Math.random() * 0.3;
+
+let S; // scalar state
+function freshScalars() {
+  return {
+    gen: 0, pace: 1, pigment: 0, form: 'scatter', notions: 2, notionClock: 0, idle: 0, longestIdle: 0,
+    births: 0, deaths: 0, plantings: 0, pigUse: [0,0,0,0,0,0], found: {}, log: [], hashes: [], settled: false,
+    pop: 0, ended: false, stagesSeen: {},
+  };
+}
+
+// ---------- catalogue variants ----------
+function toGrid(rows) { return rows.map(r => [...r].map(ch => ch === '#' ? 1 : 0)); }
+function rot(g) { return g[0].map((_, x) => g.map(row => row[x]).reverse()); }
+function flip(g) { return g.map(r => [...r].reverse()); }
+const VARIANTS = [];
+for (const entry of CATALOG) {
+  const seen = new Set();
+  for (const ph of entry.phases) {
+    let g = toGrid(ph);
+    for (let r = 0; r < 4; r++) {
+      for (const v of [g, flip(g)]) {
+        const key = v.map(r => r.join('')).join('/');
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const h = v.length + 2, w = v[0].length + 2;
+        const dx = [], dy = [], val = [];
+        let ax = -1, ay = -1;
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+          const on = (y > 0 && y < h - 1 && x > 0 && x < w - 1) ? v[y - 1][x - 1] : 0;
+          if (on && ax < 0) { ax = x; ay = y; }
+          dx.push(x); dy.push(y); val.push(on);
+        }
+        VARIANTS.push({ entry, dx, dy, val, n: val.length, ax, ay, w, h });
+      }
+      g = rot(g);
+    }
+  }
+}
+
+// ---------- simulation ----------
+function step() {
+  let births = 0, deaths = 0, pop = 0;
+  const mult = depthMult();
+  for (let y = 0; y < H; y++) {
+    const yu = ((y + H - 1) % H) * W, yc = y * W, yd = ((y + 1) % H) * W;
+    for (let x = 0; x < W; x++) {
+      const xl = (x + W - 1) % W, xr = (x + 1) % W;
+      const n = cells[yu + xl] + cells[yu + x] + cells[yu + xr] + cells[yc + xl] + cells[yc + xr] + cells[yd + xl] + cells[yd + x] + cells[yd + xr];
+      const i = yc + x;
+      if (cells[i]) {
+        if (n === 2 || n === 3) {
+          nextCells[i] = 1; npr[i] = pr[i]; npg[i] = pg[i]; npb[i] = pb[i]; pop++;
+          const d = 0.012 * mult;
+          sr[i] += pr[i] * d; sg[i] += pg[i] * d; sb[i] += pb[i] * d; sw[i] += d;
+        } else {
+          nextCells[i] = 0; deaths++;
+          const d = 0.3 * mult;
+          sr[i] += pr[i] * d; sg[i] += pg[i] * d; sb[i] += pb[i] * d; sw[i] += d;
+        }
+      } else if (n === 3) {
+        nextCells[i] = 1; births++; pop++;
+        let r = 0, g = 0, b = 0;
+        for (const j of [yu + xl, yu + x, yu + xr, yc + xl, yc + xr, yd + xl, yd + x, yd + xr]) {
+          if (cells[j]) { r += pr[j]; g += pg[j]; b += pb[j]; }
+        }
+        npr[i] = clamp(r / 3 + (Math.random() - .5) * .025);
+        npg[i] = clamp(g / 3 + (Math.random() - .5) * .025);
+        npb[i] = clamp(b / 3 + (Math.random() - .5) * .025);
+      } else nextCells[i] = 0;
+    }
+  }
+  [cells, nextCells] = [nextCells, cells];
+  [pr, npr] = [npr, pr]; [pg, npg] = [npg, pg]; [pb, npb] = [npb, pb];
+
+  const k = 0.99955;
+  for (let i = 0; i < N; i++) {
+    if (sw[i] > 5) { const f = 5 / sw[i]; sr[i] *= f; sg[i] *= f; sb[i] *= f; sw[i] = 5; }
+    sr[i] *= k; sg[i] *= k; sb[i] *= k; sw[i] *= k;
+  }
+
+  S.gen++; S.births += births; S.deaths += deaths; S.pop = pop;
+  S.idle++; if (S.idle > S.longestIdle) S.longestIdle = S.idle;
+
+  // boredom detection: has this exact paper been seen in the last few weeks?
+  let h = 2166136261;
+  for (let i = 0; i < N; i++) if (cells[i]) h = Math.imul(h ^ i, 16777619);
+  S.settled = S.hashes.includes(h);
+  S.hashes.push(h); if (S.hashes.length > 12) S.hashes.shift();
+
+  if (S.notions < 3) {
+    S.notionClock++;
+    if (S.notionClock >= notionInterval()) { S.notions++; S.notionClock = 0; }
+  } else S.notionClock = 0;
+
+  const year = Math.floor(S.gen / WEEKS);
+  if (S.gen % WEEKS === 0 && STAGES[year] && !S.stagesSeen[year]) { S.stagesSeen[year] = 1; note(STAGES[year]); }
+  if (Math.random() < (S.settled || pop === 0 ? 1 / 110 : 1 / 420)) note(REVERIES[(Math.random() * REVERIES.length) | 0]);
+  if (S.gen % 6 === 0) scan();
+  if (S.gen >= LIFE) endLife();
+}
+function clamp(v) { return v < 0.04 ? 0.04 : v > 0.96 ? 0.96 : v; }
+function depthMult() { return 1 + Math.min(S.idle / 520, 1.5); }
+function notionInterval() { return 26 + Math.floor(S.gen / WEEKS * 0.6); }
+
+function scan() {
+  const open = VARIANTS.filter(v => !S.found[v.entry.id]);
+  if (!open.length) return;
+  for (let i = 0; i < N; i++) {
+    if (!cells[i]) continue;
+    const x = i % W, y = (i / W) | 0;
+    for (const v of open) {
+      if (S.found[v.entry.id]) continue;
+      const ox = x - v.ax + W, oy = y - v.ay + H;
+      let ok = true;
+      for (let k = 0; k < v.n; k++) {
+        if (cells[((oy + v.dy[k]) % H) * W + (ox + v.dx[k]) % W] !== v.val[k]) { ok = false; break; }
+      }
+      if (ok) discover(v.entry, (ox + v.w / 2) % W, (oy + v.h / 2) % H, [pr[i], pg[i], pb[i]]);
+    }
+  }
+}
+function discover(entry, cx, cy, col) {
+  S.found[entry.id] = { gen: S.gen, col };
+  const y = Math.floor(S.gen / WEEKS);
+  const article = /^[AEIOU]/.test(entry.name) ? 'an' : 'a';
+  note(`You notice ${article} ${entry.name.toLowerCase()}.`);
+  toast(`Year ${y}. ${article[0].toUpperCase() + article.slice(1)} ${entry.name.toLowerCase()}, the first of its kind.`);
+  rings.push({ x: cx, y: cy, t: performance.now() });
+  renderJournal(); renderForms();
+}
+
+function plant(cx, cy) {
+  if (S.ended || S.notions < 1) { if (!S.ended) toast('No notions left. Wait a while.'); return; }
+  S.notions--; S.plantings++; S.pigUse[S.pigment]++;
+  const c = PIGMENTS[S.pigment].c;
+  for (const [dx, dy] of formCells(S.form, true)) {
+    const i = ((cy + dy + H * 4) % H) * W + (cx + dx + W * 4) % W;
+    cells[i] = 1;
+    pr[i] = clamp(c[0] + (Math.random() - .5) * .04); pg[i] = clamp(c[1] + (Math.random() - .5) * .04); pb[i] = clamp(c[2] + (Math.random() - .5) * .04);
+    const d = 0.18; sr[i] += c[0] * d; sg[i] += c[1] * d; sb[i] += c[2] * d; sw[i] += d;
+  }
+  if (S.idle > 260) note(`You get up after ${fmtSpan(S.idle)}.`);
+  S.idle = 0; S.hashes = []; S.settled = false;
+  updatePanel();
+}
+let pendingSym = 0;
+function formCells(id, commit) {
+  const f = FORMS.find(f => f.id === id);
+  if (!f.cells) {
+    if (!commit) return null;
+    const out = [];
+    for (let y = -2; y <= 2; y++) for (let x = -2; x <= 2; x++) if (Math.random() < 0.45) out.push([x, y]);
+    return out;
+  }
+  let pts = f.cells.map(p => p.slice());
+  const s = pendingSym;
+  for (let r = 0; r < (s & 3); r++) pts = pts.map(([x, y]) => [-y, x]);
+  if (s & 4) pts = pts.map(([x, y]) => [-x, y]);
+  const minx = Math.min(...pts.map(p => p[0])), maxx = Math.max(...pts.map(p => p[0]));
+  const miny = Math.min(...pts.map(p => p[1])), maxy = Math.max(...pts.map(p => p[1]));
+  const ox = Math.floor((minx + maxx) / 2), oy = Math.floor((miny + maxy) / 2);
+  pts = pts.map(([x, y]) => [x - ox, y - oy]);
+  if (commit) pendingSym = (Math.random() * 8) | 0;
+  return pts;
+}
+
+function seedWorld() {
+  for (let k = 0; k < 6; k++) {
+    const cx = (Math.random() * W) | 0, cy = (Math.random() * H) | 0, c = PIGMENTS[k].c;
+    for (let y = -4; y <= 4; y++) for (let x = -4; x <= 4; x++) {
+      if (Math.random() > 0.38) continue;
+      const i = ((cy + y + H) % H) * W + (cx + x + W) % W;
+      cells[i] = 1; pr[i] = c[0]; pg[i] = c[1]; pb[i] = c[2];
+    }
+  }
+}
+
+// ---------- rendering ----------
+const canvas = document.getElementById('world');
+const ctx = canvas.getContext('2d');
+const stainCanvas = document.createElement('canvas'); stainCanvas.width = W; stainCanvas.height = H;
+const sctx = stainCanvas.getContext('2d');
+const img = sctx.createImageData(W, H);
+let texture = null, size = 600, dpr = 1;
+let theme = readTheme();
+let hover = null, rings = [];
+
+function hex(s) { s = s.trim().replace('#', ''); return [0, 2, 4].map(k => parseInt(s.slice(k, k + 2), 16) / 255); }
+function readTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  return { dark: cs.getPropertyValue('--dark').trim() === '1', sheet: hex(cs.getPropertyValue('--sheet')), ghost: cs.getPropertyValue('--ghost').trim(), accent: cs.getPropertyValue('--accent').trim() };
+}
+function lift(c) { return theme.dark ? c * 0.55 + 0.42 : c; }
+function pigCss(c, dot) {
+  const f = dot ? (theme.dark ? v => Math.min(1, v * 0.5 + 0.55) : v => v * 0.62) : lift;
+  return `rgb(${(f(c[0]) * 255) | 0},${(f(c[1]) * 255) | 0},${(f(c[2]) * 255) | 0})`;
+}
+
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  size = canvas.clientWidth || 600;
+  canvas.width = Math.round(size * dpr); canvas.height = Math.round(size * dpr);
+  makeTexture();
+}
+function makeTexture() {
+  const t = document.createElement('canvas'); t.width = canvas.width; t.height = canvas.height;
+  const tc = t.getContext('2d'); const id = tc.createImageData(t.width, t.height); const d = id.data;
+  const base = theme.dark ? 255 : 0;
+  for (let i = 0; i < d.length; i += 4) { d[i] = d[i + 1] = d[i + 2] = base; d[i + 3] = Math.random() * (theme.dark ? 10 : 16); }
+  tc.putImageData(id, 0, 0);
+  tc.globalAlpha = theme.dark ? .05 : .07; tc.strokeStyle = theme.dark ? '#fff' : '#000'; tc.lineWidth = dpr * .6;
+  for (let k = 0; k < 90; k++) {
+    const x = Math.random() * t.width, y = Math.random() * t.height, a = Math.random() * Math.PI, l = (8 + Math.random() * 30) * dpr;
+    tc.beginPath(); tc.moveTo(x, y); tc.quadraticCurveTo(x + Math.cos(a) * l * .5 + 4, y + Math.sin(a) * l * .5, x + Math.cos(a) * l, y + Math.sin(a) * l); tc.stroke();
+  }
+  texture = t;
+}
+
+function paintStain(target, px) {
+  const d = img.data, P = theme.sheet, dark = theme.dark;
+  for (let i = 0, j = 0; i < N; i++, j += 4) {
+    const w = sw[i]; let r = P[0], g = P[1], b = P[2];
+    if (w > 0.002) {
+      const inv = 1 / w; let cr = sr[i] * inv, cg = sg[i] * inv, cb = sb[i] * inv;
+      let cov = (1 - Math.exp(-w * 0.85)) * grain[i]; if (cov > 0.96) cov = 0.96;
+      if (dark) { cr = lift(cr); cg = lift(cg); cb = lift(cb); const k = cov * 0.88; r = r * (1 - k) + cr * k; g = g * (1 - k) + cg * k; b = b * (1 - k) + cb * k; }
+      else { r *= 1 - cov + cov * cr; g *= 1 - cov + cov * cg; b *= 1 - cov + cov * cb; }
+    }
+    d[j] = r * 255; d[j + 1] = g * 255; d[j + 2] = b * 255; d[j + 3] = 255;
+  }
+  sctx.putImageData(img, 0, 0);
+  target.imageSmoothingEnabled = true; target.imageSmoothingQuality = 'high';
+  target.drawImage(stainCanvas, 0, 0, px, px);
+}
+
+function draw(now) {
+  const px = canvas.width, cs = px / W;
+  paintStain(ctx, px);
+  if (texture) ctx.drawImage(texture, 0, 0);
+  const rad = cs * 0.34;
+  for (let i = 0; i < N; i++) {
+    if (!cells[i]) continue;
+    ctx.fillStyle = pigCss([pr[i], pg[i], pb[i]], true);
+    ctx.beginPath(); ctx.arc((i % W + .5) * cs, (((i / W) | 0) + .5) * cs, rad, 0, 6.2832); ctx.fill();
+  }
+  if (hover && !S.ended) {
+    ctx.fillStyle = theme.ghost; ctx.strokeStyle = theme.ghost; ctx.lineWidth = dpr;
+    const pts = formCells(S.form, false);
+    if (pts) for (const [dx, dy] of pts) ctx.fillRect(((hover.x + dx + W) % W) * cs + 1, ((hover.y + dy + H) % H) * cs + 1, cs - 2, cs - 2);
+    else { ctx.setLineDash([3 * dpr, 3 * dpr]); ctx.strokeRect((hover.x - 2) * cs, (hover.y - 2) * cs, cs * 5, cs * 5); ctx.setLineDash([]); }
+  }
+  rings = rings.filter(r => now - r.t < 2400);
+  for (const r of rings) {
+    const t = (now - r.t) / 2400;
+    ctx.globalAlpha = 1 - t; ctx.strokeStyle = theme.accent; ctx.lineWidth = 1.5 * dpr;
+    ctx.beginPath(); ctx.arc(r.x * cs, r.y * cs, cs * (3 + t * 9), 0, 6.2832); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+}
+
+// ---------- UI ----------
+const $ = id => document.getElementById(id);
+function fmtSpan(weeks) {
+  const y = Math.floor(weeks / WEEKS), w = weeks % WEEKS;
+  if (!y) return `${w} week${w === 1 ? '' : 's'}`;
+  return `${y} year${y === 1 ? '' : 's'}${w ? `, ${w} wk` : ''}`;
+}
+function note(text) {
+  S.log.unshift({ y: Math.floor(S.gen / WEEKS), text });
+  if (S.log.length > 7) S.log.pop();
+  renderLog();
+}
+function renderLog() {
+  $('margin').innerHTML = S.log.map(l => `<li><span>yr ${l.y}</span>${l.text}</li>`).join('');
+}
+let toastTimer;
+function toast(text) {
+  const t = $('toast'); t.textContent = text; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 4200);
+}
+
+function buildLifebar() {
+  const lb = $('lifebar');
+  for (let d = 0; d <= YEARS; d += 10) {
+    const t = document.createElement('div'); t.className = 'tick'; t.style.left = `${d / YEARS * 100}%`;
+    if (d % 20 === 0) t.innerHTML = `<span>${d}</span>`;
+    lb.appendChild(t);
+  }
+}
+function renderSwatches() {
+  const box = $('swatches'); box.innerHTML = '';
+  PIGMENTS.forEach((p, k) => {
+    const b = document.createElement('button');
+    b.style.background = pigCss(p.c, false); b.setAttribute('aria-label', p.name); b.title = p.name;
+    b.setAttribute('aria-pressed', String(k === S.pigment));
+    b.onclick = () => { S.pigment = k; renderSwatches(); };
+    box.appendChild(b);
+  });
+  $('pigname').textContent = PIGMENTS[S.pigment].name;
+}
+function formUnlocked(f) {
+  if (f.needForm) return !!S.found[f.needForm];
+  return Object.keys(S.found).length >= f.need;
+}
+function renderForms() {
+  const box = $('forms'); box.innerHTML = '';
+  for (const f of FORMS) {
+    const open = formUnlocked(f);
+    if (!open && S.form === f.id) S.form = 'scatter';
+    const b = document.createElement('button');
+    b.disabled = !open; b.setAttribute('aria-pressed', String(S.form === f.id));
+    const cond = f.needForm ? 'after you see one' : `after ${f.need} forms`;
+    b.innerHTML = `<span class="n">${f.name}</span><span class="k">${open ? (f.cells ? f.cells.length + ' cells' : '≈11 cells') : cond}</span>${open ? `<span class="d">${f.note}</span>` : ''}`;
+    b.onclick = () => { S.form = f.id; renderForms(); };
+    box.appendChild(b);
+  }
+}
+function drawMini(cv, entry, col) {
+  const g = toGrid(entry.phases[0]); const d = 2;
+  const h = g.length, w = g[0].length, n = Math.max(h, w) + d * 2;
+  const r = window.devicePixelRatio > 1 ? 2 : 1;
+  cv.width = cv.height = 56 * r;
+  const c = cv.getContext('2d'); const cs = cv.width / n;
+  c.fillStyle = col ? pigCss(col, true) : theme.ghost;
+  const offx = (n - w) / 2, offy = (n - h) / 2;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (g[y][x]) {
+    c.beginPath(); c.arc((x + offx + .5) * cs, (y + offy + .5) * cs, cs * .38, 0, 6.2832); c.fill();
+  }
+}
+function renderJournal() {
+  const box = $('entries'); box.innerHTML = '';
+  let n = 0;
+  for (const e of CATALOG) {
+    const f = S.found[e.id]; if (f) n++;
+    const el = document.createElement('div'); el.className = 'entry' + (f ? '' : ' unk');
+    const cells = e.phases[0].join('').split('#').length - 1;
+    el.innerHTML = `<canvas></canvas><div><p class="nm">${f ? e.name : 'Unrecorded'}</p><p class="meta">${e.kind} · ${cells} cells${f ? ` · yr ${Math.floor(f.gen / WEEKS)}` : ''}</p><p class="nt">${f ? e.note : 'Not yet seen on this paper.'}</p></div>`;
+    box.appendChild(el);
+    const cv = el.querySelector('canvas');
+    if (f) drawMini(cv, e, f.col); else drawMini(cv, e, null);
+    if (!f) cv.style.filter = 'blur(2.5px)';
+    cv.setAttribute('aria-hidden', 'true');
+  }
+  $('jcount').textContent = `${n} of ${CATALOG.length} forms recorded`;
+}
+function renderPace() {
+  for (const b of $('pace').querySelectorAll('button')) b.setAttribute('aria-pressed', String(+b.dataset.s === S.pace));
+}
+let lastPanel = '';
+function updatePanel() {
+  const y = Math.floor(S.gen / WEEKS), w = S.gen % WEEKS;
+  const status = S.ended ? 'It is over.' : S.pace === 0 ? 'You hold your breath.' : S.pop === 0 ? 'The paper is empty.' : S.settled ? 'Nothing is happening.' : 'Something is happening.';
+  const key = [y, w, status, S.pop, S.idle, S.notions, S.births].join('|');
+  if (key === lastPanel) return; lastPanel = key;
+  $('age').innerHTML = `Year <b>${y}</b> · week <b>${String(w).padStart(2, '0')}</b>`;
+  $('lifefill').style.width = `${Math.min(1, S.gen / LIFE) * 100}%`;
+  $('status').textContent = status;
+  $('pop').textContent = `${S.pop.toLocaleString()} living cell${S.pop === 1 ? '' : 's'}`;
+  $('still').textContent = fmtSpan(S.idle);
+  $('depth').textContent = `${depthMult().toFixed(2)}×`;
+  $('bd').textContent = `${S.births.toLocaleString()} / ${S.deaths.toLocaleString()}`;
+  $('notions').innerHTML = [0, 1, 2].map(k => `<i class="${k < S.notions ? 'on' : ''}"></i>`).join('');
+  $('notions').setAttribute('aria-label', `${S.notions} of 3 notions`);
+  $('notionhint').textContent = S.notions >= 3 ? 'You have all the notions you can hold.' : `Next notion in ${notionInterval() - S.notionClock} weeks.`;
+}
+
+// ---------- ending & past lives ----------
+function loadLives() { try { return JSON.parse(localStorage.getItem('still-life-lives') || '[]'); } catch { return []; } }
+function saveLives(l) { try { localStorage.setItem('still-life-lives', JSON.stringify(l)); } catch {} }
+function renderLives() {
+  const lives = loadLives();
+  $('past').hidden = !lives.length;
+  $('lives').innerHTML = lives.map(l => `<figure><img src="${l.thumb}" alt=""><figcaption>${l.title}<span>No. ${l.n} · ${l.forms} forms · still ${l.still}</span></figcaption></figure>`).join('');
+}
+function titleFor() {
+  const found = CATALOG.filter(e => S.found[e.id]);
+  const rare = found.length ? found[found.length - 1] : null;
+  const order = PIGMENTS.map((p, k) => [S.pigUse[k], k]).filter(a => a[0] > 0).sort((a, b) => b[0] - a[0]);
+  const pigs = order.slice(0, 2).map(a => PIGMENTS[a[1]].name);
+  const inPart = pigs.length ? `, in ${pigs.join(' and ')}` : ', unattended';
+  return rare ? `Still Life with ${rare.name}${inPart}` : `Untitled${inPart}`;
+}
+function endLife() {
+  S.ended = true; S.pace = 0; renderPace();
+  const px = 480, off = document.createElement('canvas'); off.width = off.height = px;
+  const oc = off.getContext('2d'); paintStain(oc, px);
+  const url = off.toDataURL('image/jpeg', 0.86);
+  const small = document.createElement('canvas'); small.width = small.height = 200;
+  small.getContext('2d').drawImage(off, 0, 0, 200, 200);
+  const lives = loadLives();
+  const n = (lives[0]?.n || 0) + 1;
+  const title = titleFor(), forms = Object.keys(S.found).length;
+  lives.unshift({ n, title, forms, still: fmtSpan(S.longestIdle), thumb: small.toDataURL('image/jpeg', 0.75) });
+  saveLives(lives.slice(0, 12)); renderLives();
+  $('endimg').src = url;
+  $('endtitle').textContent = title;
+  $('endsub').textContent = `No. ${n}. Eighty years, 4,160 weeks. What stayed on the paper is what died there, and what never moved.`;
+  $('endfacts').innerHTML = [
+    ['Forms recorded', `${forms} of ${CATALOG.length}`], ['Plantings', S.plantings], ['Cells born', S.births.toLocaleString()],
+    ['Cells died', S.deaths.toLocaleString()], ['Longest stillness', fmtSpan(S.longestIdle)],
+  ].map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('');
+  $('end').hidden = false; $('again').focus();
+  updatePanel();
+}
+function newLife() {
+  cells.fill(0); pr.fill(0); pg.fill(0); pb.fill(0); sr.fill(0); sg.fill(0); sb.fill(0); sw.fill(0);
+  const keepPig = S ? S.pigment : 0;
+  S = freshScalars(); S.pigment = keepPig;
+  seedWorld();
+  note('You are born. The paper is already marked.');
+  afterStateChange();
+}
+function afterStateChange() {
+  $('end').hidden = true;
+  renderSwatches(); renderForms(); renderJournal(); renderLog(); renderPace(); lastPanel = ''; updatePanel();
+}
+
+// ---------- hot reload state ----------
+function serialize() {
+  return { S, cells: Array.from(cells), pr: Array.from(pr), pg: Array.from(pg), pb: Array.from(pb), sr: Array.from(sr), sg: Array.from(sg), sb: Array.from(sb), sw: Array.from(sw) };
+}
+function restore(d) {
+  if (!d || !d.S || !d.cells || d.cells.length !== N) return false;
+  S = Object.assign(freshScalars(), d.S);
+  cells.set(d.cells); pr.set(d.pr); pg.set(d.pg); pb.set(d.pb); sr.set(d.sr); sg.set(d.sg); sb.set(d.sb); sw.set(d.sw);
+  return true;
+}
+
+// ---------- input ----------
+function cellAt(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: Math.min(W - 1, Math.max(0, Math.floor((e.clientX - r.left) / r.width * W))), y: Math.min(H - 1, Math.max(0, Math.floor((e.clientY - r.top) / r.height * H))) };
+}
+canvas.addEventListener('pointermove', e => { hover = cellAt(e); });
+canvas.addEventListener('pointerleave', () => { if (!kbMode) hover = null; });
+canvas.addEventListener('pointerdown', e => { kbMode = false; const c = cellAt(e); hover = e.pointerType === 'mouse' ? c : null; plant(c.x, c.y); });
+let kbMode = false;
+canvas.addEventListener('focus', () => { if (!hover) { hover = { x: W / 2, y: H / 2 }; kbMode = true; } });
+canvas.addEventListener('blur', () => { if (kbMode) hover = null; kbMode = false; });
+canvas.addEventListener('keydown', e => {
+  const mv = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+  if (mv) { e.preventDefault(); kbMode = true; hover = hover || { x: W / 2, y: H / 2 }; const k = e.shiftKey ? 6 : 1; hover = { x: (hover.x + mv[0] * k + W) % W, y: (hover.y + mv[1] * k + H) % H }; }
+  else if (e.key === 'Enter' && hover) { e.preventDefault(); plant(hover.x, hover.y); }
+});
+document.addEventListener('keydown', e => {
+  if (e.target.closest && e.target.closest('button, input, textarea')) return;
+  if (e.key === ' ' && !S.ended) { e.preventDefault(); S.pace = S.pace === 0 ? (lastPace || 1) : (lastPace = S.pace, 0); renderPace(); updatePanel(); }
+  else if ('1234'.includes(e.key) && e.key.length === 1 && !S.ended) { S.pace = +e.key - 1; renderPace(); updatePanel(); }
+});
+let lastPace = 1;
+$('pace').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b || S.ended) return;
+  if (S.pace) lastPace = S.pace; S.pace = +b.dataset.s; renderPace(); updatePanel();
+});
+$('again').onclick = newLife;
+
+function onTheme() { theme = readTheme(); makeTexture(); renderSwatches(); renderJournal(); }
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', onTheme);
+new MutationObserver(onTheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+new ResizeObserver(resize).observe(canvas);
+
+// ---------- loop ----------
+let acc = 0, last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.25, (now - last) / 1000); last = now;
+  if (!S.ended && S.pace) {
+    acc += dt * PACES[S.pace];
+    let steps = 0;
+    while (acc >= 1 && steps < 4 && !S.ended) { step(); acc -= 1; steps++; }
+    if (steps === 4) acc = 0;
+  }
+  draw(now);
+  updatePanel();
+  requestAnimationFrame(frame);
+}
+
+function start(data) {
+  buildLifebar();
+  S = freshScalars();
+  if (restore(data) && !S.ended) afterStateChange(); else newLife();
+  renderLives();
+  resize();
+  requestAnimationFrame(frame);
+}
+const hot = window.claude?.hot;
+if (hot?.snapshot) hot.snapshot(serialize);
+hot?.ready ? hot.ready(start) : start(hot?.data ?? {});
+})();
+</script>
