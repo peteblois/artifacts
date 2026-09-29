@@ -56,6 +56,30 @@ const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const STEPS = REDUCED ? 2 : 3;
 const DT = .08;
 
+/* The model. One grid cell is one length unit; heights use the same unit.
+   Water:  local-inertial shallow water (Bates et al. 2010) with Manning bed friction.
+           Discharge lives on cell faces. Friction grows as depth shrinks, so thin sheets
+           barely move and water gathers into whatever path is deepest.
+   Sand:   bedload by excess shear (Meyer-Peter–Müller form) on the same faces, deflected
+           down the bed slope, and the Exner equation: the bed rises or falls by exactly the
+           sand that arrives or leaves. Below the threshold, water moves no sand at all.
+   Banks:  anything steeper than the angle of repose avalanches; wet sand stands lower.
+   Soil:   water percolates into the sand, faster where the sand is still dry.            */
+const PRM = {
+  g: 9.81,
+  n: .12,          // Manning roughness
+  thc: .008,       // threshold of motion
+  kq: 80,          // bedload coefficient
+  beta: 1.6,       // slope deflection of moving sand
+  morf: 8,         // morphological acceleration
+  perc: .0003,     // percolation into saturated sand
+  absorb: .05,     // how fast dry sand drinks
+  hold: .03,       // how much water dry sand holds before it is saturated
+  reposeDry: .75,
+  reposeWet: .5,
+};
+let Q = 3;         // spring discharge, volume per time
+
 // ---------- shaders ----------
 const VS = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0., 1.); }`;
@@ -67,91 +91,87 @@ float n2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f);
 float fbm(vec2 p){ return .5*n2(p) + .28*n2(p*2.03+7.) + .14*n2(p*4.1+3.) + .08*n2(p*8.3+1.); }
 uniform vec2 G; uniform float SEED;
 float meander(float y){ return G.x*.5 + sin(y*.012 + SEED)*G.x*.05 + sin(y*.031 + SEED*2.3)*G.x*.015; }
-// The top of the table is a rock canyon: fixed walls, a steeper bed, the spring inside it.
+// The top of the table is a rock canyon: fixed walls, a steeper bed, the spring at its head.
 float canyon(vec2 c){ float e = (fbm(vec2(c.x*.07, SEED*1.7)) - .5)*G.y*.16; return smoothstep(G.y*.8 + e, G.y*.87 + e, c.y); }
-float halfw(float y){ return G.x*.02 + 2.5*n2(vec2(y*.06, SEED)); }
+float halfw(float y){ return G.x*.018 + 2.*n2(vec2(y*.06, SEED)); }
 float rockMask(vec2 c){ return canyon(c)*smoothstep(halfw(c.y), halfw(c.y) + 2.5, abs(c.x - meander(c.y))); }
+// Below the canyon: a plain tilted sand bed with gentle roughness. No pre-cut valley; the water finds its own way.
 float base(vec2 c){
   float cz = canyon(c);
   float wall = smoothstep(halfw(c.y), halfw(c.y) + 3.5, abs(c.x - meander(c.y)))*(9. + fbm(c*.05 + SEED)*6.)*cz;
   float drop = cz*max(c.y - G.y*.8, 0.)*.1;
-  float valley = 3.5*exp(-pow((c.x - meander(c.y))/(G.x*.06), 2.));
-  float banks = pow(abs(c.x/G.x - .5)*2., 2.)*5.;
-  return 6. + c.y*.085 + fbm(c*.018 + SEED)*2.2 + fbm(c*.07 + SEED*3.)*.7 + banks - valley*(1. - cz) + wall + drop;
+  float rim = pow(abs(c.x/G.x - .5)*2., 3.)*6.;
+  return 8. + c.y*.085 + fbm(c*.02 + SEED)*1.4 + fbm(c*.09 + SEED*3.)*.4 + rim + wall + drop;
 }`;
 const FS_INIT = `#version 300 es
 ${COMMON}
 layout(location=0) out vec4 o;
 void main(){ o = vec4(base(gl_FragCoord.xy), 0., 0., 0.); }`;
-const FS_CLEAR = `#version 300 es
-precision highp float; layout(location=0) out vec4 o; void main(){ o = vec4(0.); }`;
 
-// 1. Pipe model: water flows to each neighbour in proportion to the difference in surface height.
+// 1. Water momentum on faces. x = discharge through the right face, y = through the top face.
 const FS_FLUX = `#version 300 es
 ${COMMON}
-uniform sampler2D ST, FL; uniform float DT;
+uniform sampler2D ST, FL; uniform float DT, GRAV, MANN;
 layout(location=0) out vec4 o;
-float H(ivec2 q){ vec4 s = texelFetch(ST, q, 0); return s.x + s.y; }
+float face(float q, vec2 a, vec2 b){
+  float ea = a.x + a.y, eb = b.x + b.y;
+  float hf = max(ea, eb) - max(a.x, b.x);
+  if (hf <= 1e-4) return 0.;
+  float qn = (q - GRAV*hf*DT*(eb - ea))/(1. + GRAV*DT*MANN*MANN*abs(q)/pow(hf, 7./3.));
+  return clamp(qn, -4.*hf, 4.*hf);
+}
 void main(){
   ivec2 p = ivec2(gl_FragCoord.xy), g = ivec2(G);
-  vec4 s = texelFetch(ST, p, 0); float hc = s.x + s.y;
-  float hL = p.x > 0 ? H(p + ivec2(-1, 0)) : 1e4;
-  float hR = p.x < g.x-1 ? H(p + ivec2(1, 0)) : 1e4;
-  float hB = p.y > 0 ? H(p + ivec2(0, -1)) : hc - 1.5;
-  float hT = p.y < g.y-1 ? H(p + ivec2(0, 1)) : 1e4;
-  vec4 f = texelFetch(FL, p, 0);
-  // bed friction: thin sheets of water drag on the sand far more than deep channels do
-  float damp = mix(.8, .988, smoothstep(.03, .9, s.y));
-  vec4 nf = max(vec4(0.), f*damp + DT*9.81*vec4(hc-hL, hc-hR, hc-hB, hc-hT));
-  float sum = nf.x + nf.y + nf.z + nf.w;
-  // a film thinner than this clings to the sand instead of creeping outward
-  if (sum > 0.) nf *= min(1., max(s.y - .045, 0.)/(sum*DT));
-  o = nf;
+  vec2 a = texelFetch(ST, p, 0).xy, f = texelFetch(FL, p, 0).xy;
+  float qx = p.x < g.x - 1 ? face(f.x, a, texelFetch(ST, p + ivec2(1, 0), 0).xy) : 0.;
+  float qy = p.y < g.y - 1 ? face(f.y, a, texelFetch(ST, p + ivec2(0, 1), 0).xy) : 0.;
+  o = vec4(qx, qy, 0., 0.);
 }`;
-// 2. Move the water, derive velocity, then erode or deposit against the flow's carrying capacity.
+
+// 2. Water mass: move it, feed the spring, spill off the bottom edge, soak into the sand. Also cell velocity.
 const FS_WATER = `#version 300 es
 ${COMMON}
-uniform sampler2D ST, FL; uniform float DT, Q, SRC, KC, KS, KD;
+uniform sampler2D ST, FL; uniform float DT, GRAV, MANN, THC, QIN, SRC, SIG, PERC, ABSORB, HOLD;
 layout(location=0) out vec4 o0; layout(location=1) out vec4 o1;
-vec4 F(ivec2 q){ return (q.x < 0 || q.y < 0 || q.x >= int(G.x) || q.y >= int(G.y)) ? vec4(0.) : texelFetch(FL, q, 0); }
-float B(ivec2 q){ q = clamp(q, ivec2(0), ivec2(G) - 1); return texelFetch(ST, q, 0).x; }
+vec2 F(ivec2 q){ return (q.x < 0 || q.y < 0) ? vec2(0.) : texelFetch(FL, q, 0).xy; }
 void main(){
   ivec2 p = ivec2(gl_FragCoord.xy);
-  vec4 s = texelFetch(ST, p, 0), f = F(p);
-  vec4 fl = F(p + ivec2(-1, 0)), fr = F(p + ivec2(1, 0)), fb = F(p + ivec2(0, -1)), ft = F(p + ivec2(0, 1));
-  float inflow = fl.y + fr.x + fb.w + ft.z;
-  float outflow = f.x + f.y + f.z + f.w;
-  float d0 = s.y;
-  float d = max(0., d0 + DT*(inflow - outflow));
-  if (float(p.y) > G.y - 4.) d += DT*Q*exp(-pow((gl_FragCoord.x - SRC)/7., 2.));
-  float wx = (fl.y - f.x + f.y - fr.x)*.5;
-  float wy = (fb.w - f.z + f.w - ft.z)*.5;
-  vec2 v = vec2(wx, wy)/max((d0 + d)*.5, .03);
-  float sp = length(v); if (sp > 3.) v *= 3./sp;
-  vec2 gb = vec2(B(p + ivec2(1, 0)) - B(p + ivec2(-1, 0)), B(p + ivec2(0, 1)) - B(p + ivec2(0, -1)))*.5;
-  float sl = length(gb), sinA = sl/sqrt(1. + sl*sl);
-  // stream power: deep, fast water carries far more than a thin sheet, so flow that gathers cuts deeper and gathers more
-  float dd = min(d, 1.2);
-  float C = KC*2.*length(v)*dd*dd*(.4 + 3.*sinA);
-  float b = s.x, sed = s.z;
-  if (C > sed) { float a = min(min(KS*(C - sed), .02), max(b, 0.)); b -= a; sed += a; }
-  else { float a = KD*(sed - C); b += a; sed -= a; }
-  // the sand soaks up thin water; deep channel water barely notices
-  d = max(0., d - DT*(.0006 + .004*(1. - smoothstep(.05, .45, sp)) + .03*(1. - smoothstep(.0, .12, d))*d));
-  if (p.y == 0) sed *= .5;
-  float wet = max(s.w - DT*.0035, step(.012, d));
-  o0 = vec4(b, d, sed, wet);
-  o1 = vec4(v, 0., 0.);
+  vec4 s = texelFetch(ST, p, 0);
+  vec2 f = F(p), fl = F(p - ivec2(1, 0)), fb = F(p - ivec2(0, 1));
+  float d = s.y + DT*(fl.x - f.x + fb.y - f.y);
+  if (p.y == int(G.y) - 1) d += DT*QIN*exp(-pow((gl_FragCoord.x - SRC)/SIG, 2.))/(SIG*1.7725);
+  if (p.y == 0) d -= DT*max(d, 0.)*sqrt(GRAV*max(d, 0.));
+  // dry sand drinks until it holds its fill (HOLD of depth), then only slow percolation remains, faster under deeper water
+  d = max(d, 0.);
+  float take = min(d, DT*ABSORB*(1. - s.z));
+  d -= take;
+  float wet = s.z + take/HOLD;
+  d = max(d - DT*PERC*(1. + 4.*d)*step(1e-5, d), 0.);
+  if (d <= 1e-5) wet -= DT*.004;
+  wet = clamp(wet, 0., 1.);
+  vec2 u = d > .004 ? vec2(fl.x + f.x, fb.y + f.y)*.5/max(d, .02) : vec2(0.);
+  float th = d > .015 ? MANN*MANN*dot(u, u)/pow(d, 1./3.) : 0.;
+  o0 = vec4(s.x, d, wet, 0.);
+  o1 = vec4(u, max(th - THC, 0.), 0.);
 }`;
-// 3. Carry sediment downstream, let steep sand slump to its angle of repose, apply the hand.
-const FS_SEDI = `#version 300 es
+
+// 3. The bed: bedload through each face, Exner update, avalanching, the hand, the fixed canyon.
+const FS_BED = `#version 300 es
 ${COMMON}
-uniform sampler2D ST, VEL; uniform float DT; uniform vec4 BR; uniform vec4 PU;
+uniform sampler2D ST, FL; uniform float DT, MANN, THC, KQ, BETA, MORF, RDRY, RWET; uniform vec4 BR, PU;
 layout(location=0) out vec4 o;
 float B(ivec2 q){ q = clamp(q, ivec2(0), ivec2(G) - 1); return texelFetch(ST, q, 0).x; }
-vec4 bil(vec2 c){
-  c = clamp(c - .5, vec2(0.), G - 1.001); ivec2 i = ivec2(floor(c)); vec2 f = fract(c);
-  return mix(mix(texelFetch(ST, i, 0), texelFetch(ST, i + ivec2(1, 0), 0), f.x), mix(texelFetch(ST, i + ivec2(0, 1), 0), texelFetch(ST, i + ivec2(1, 1), 0), f.x), f.y);
+float bedload(ivec2 a, ivec2 b, float q){
+  vec2 A = texelFetch(ST, a, 0).xy, Bc = texelFetch(ST, b, 0).xy;
+  float hf = max(A.x + A.y, Bc.x + Bc.y) - max(A.x, Bc.x);
+  if (hf < .015) return 0.;
+  float u = q/hf;
+  float ex = MANN*MANN*u*u/pow(hf, 1./3.) - THC;
+  if (ex <= 0.) return 0.;
+  float qs = KQ*ex*sqrt(ex)*(sign(u) - BETA*(Bc.x - A.x));
+  // rock neither gives nor takes sand
+  if (canyon(vec2(a) + .5) > .3 || canyon(vec2(b) + .5) > .3) return 0.;
+  return clamp(qs, -.4, .4);
 }
 vec2 qp(ivec2 q){
   float r = BR.z*1.4;
@@ -159,58 +179,74 @@ vec2 qp(ivec2 q){
   return PU.zw*w*min(B(q), 3.5);
 }
 void main(){
-  ivec2 p = ivec2(gl_FragCoord.xy);
+  ivec2 p = ivec2(gl_FragCoord.xy), g = ivec2(G), ex = ivec2(1, 0), ey = ivec2(0, 1);
   vec4 s = texelFetch(ST, p, 0);
-  vec2 v = texelFetch(VEL, p, 0).xy;
-  float sed = bil(gl_FragCoord.xy - v*DT).z;
-  float b = s.x;
-  float T = s.y > .01 ? mix(.62, .45, clamp(length(v)/2., 0., 1.)) : .75;
-  // slump toward all eight neighbours, diagonals at their true distance, so piles settle into round cones
-  float acc = 0.;
-  for (int k = 0; k < 8; k++) {
-    ivec2 o = k == 0 ? ivec2(1, 0) : k == 1 ? ivec2(-1, 0) : k == 2 ? ivec2(0, 1) : k == 3 ? ivec2(0, -1)
-            : k == 4 ? ivec2(1, 1) : k == 5 ? ivec2(-1, -1) : k == 6 ? ivec2(1, -1) : ivec2(-1, 1);
-    float dist = k < 4 ? 1. : 1.41421;
-    float dl = B(p + o) - b;
-    acc += sign(dl)*max(abs(dl) - T*dist, 0.)/(dist*dist);
-  }
-  if (canyon(gl_FragCoord.xy) < .3) b += .075*acc;
-  if (BR.w != 0.) { float dd = length(gl_FragCoord.xy - BR.xy); b += BR.w*exp(-dd*dd/(BR.z*BR.z)); }
-  // the plough: sand flux along the drag, strongest under the finger; its divergence takes from behind and heaps in front
-  if (PU.z != 0. || PU.w != 0.) {
-    ivec2 ex = ivec2(1, 0), ey = ivec2(0, 1);
-    float div = (qp(p + ex).x - qp(p - ex).x + qp(p + ey).y - qp(p - ey).y)*.5;
-    b -= div;
-  }
+  vec2 f = texelFetch(FL, p, 0).xy;
+  float qR = p.x < g.x - 1 ? bedload(p, p + ex, f.x) : 0.;
+  float qL = p.x > 0 ? bedload(p - ex, p, texelFetch(FL, p - ex, 0).x) : 0.;
+  float qT = p.y < g.y - 1 ? bedload(p, p + ey, f.y) : 0.;
+  float qB = p.y > 0 ? bedload(p - ey, p, texelFetch(FL, p - ey, 0).y) : qT;
+  float b = s.x - MORF*DT*(qR - qL + qT - qB);
   float cz = canyon(gl_FragCoord.xy);
-  if (cz > 0.) b = mix(b, base(gl_FragCoord.xy), cz*.35);
-  o = vec4(max(b, 0.), s.y, max(sed, 0.), s.w);
+  if (cz < .3) {
+    // each pair of cells agrees on one angle of repose (wet if either is under water), so sand is only ever moved, never made
+    float acc = 0.;
+    for (int k = 0; k < 8; k++) {
+      ivec2 o = k == 0 ? ex : k == 1 ? -ex : k == 2 ? ey : k == 3 ? -ey : k == 4 ? ivec2(1, 1) : k == 5 ? ivec2(-1, -1) : k == 6 ? ivec2(1, -1) : ivec2(-1, 1);
+      if (canyon(vec2(p + o) + .5) >= .3) continue;
+      vec2 nb = texelFetch(ST, clamp(p + o, ivec2(0), ivec2(G) - 1), 0).xy;
+      float T = (s.y > .01 || nb.y > .01) ? RWET : RDRY;
+      float dist = k < 4 ? 1. : 1.41421, dl = nb.x - s.x;
+      acc += sign(dl)*max(abs(dl) - T*dist, 0.)/(dist*dist);
+    }
+    b += .075*acc;
+  }
+  if (BR.w != 0.) { float dd = length(gl_FragCoord.xy - BR.xy); b += BR.w*exp(-dd*dd/(BR.z*BR.z)); }
+  if (PU.z != 0. || PU.w != 0.) b -= (qp(p + ex).x - qp(p - ex).x + qp(p + ey).y - qp(p - ey).y)*.5;
+  if (cz >= .3) b = base(gl_FragCoord.xy);
+  o = vec4(max(b, 0.), s.y, s.z, 0.);
 }`;
-// The picture: lit sand, darkened where wet; water that refracts, absorbs, reflects the sky and foams where it runs fast.
+
+// Cast shadows from a low sun, at grid resolution.
+const FS_SHADOW = `#version 300 es
+${COMMON}
+uniform sampler2D ST;
+layout(location=0) out vec4 o;
+float Hs(vec2 c){ vec4 s = texture(ST, c/G); return s.x + s.y; }
+void main(){
+  vec2 c = gl_FragCoord.xy, dir = vec2(-.77, .64);
+  float h0 = Hs(c), sh = 1.;
+  for (int i = 1; i <= 32; i++) {
+    vec2 q = c + dir*float(i)*1.2;
+    if (q.x < 0. || q.y < 0. || q.x > G.x || q.y > G.y) break;
+    sh = min(sh, clamp(1. - (Hs(q) - h0 - .62*float(i)*1.2)*.8, 0., 1.));
+  }
+  o = vec4(sh, 0., 0., 1.);
+}`;
+
+// The picture: raking light and shadow on the sand so every cut reads; water that deepens in colour
+// with depth, shows moving sand as a tan shimmer, and foams where it runs fast.
 const FS_DRAW = `#version 300 es
 ${COMMON}
-uniform sampler2D ST, VEL; uniform vec2 R; uniform float TIME;
+uniform sampler2D ST, VEL, SH; uniform vec2 R; uniform float TIME;
 layout(location=0) out vec4 o;
-const vec3 SUN = normalize(vec3(-.5, .55, .68));
+const vec3 SUN = vec3(-.653, .543, .53);
 vec4 S(vec2 uv){ return texture(ST, uv); }
 vec3 sand(vec2 uv){
   vec2 e = 1./G, c = uv*G;
   vec2 g = vec2(S(uv + vec2(e.x, 0.)).x - S(uv - vec2(e.x, 0.)).x, S(uv + vec2(0., e.y)).x - S(uv - vec2(0., e.y)).x)*.5;
-  float rp = c.y*1.1 + c.x*.25 + fbm(c*.12)*7.;
-  g += vec2(.02, .06)*cos(rp)*(.6 + .4*n2(c*.05));
-  vec3 N = normalize(vec3(-g*.9, 1.));
-  float dif = clamp(dot(N, SUN), 0., 1.);
+  g += vec2(.015, .045)*cos(c.y*1.1 + c.x*.25 + fbm(c*.12)*7.)*(.6 + .4*n2(c*.05));
+  vec3 N = normalize(vec3(-g*1.7, 1.));
+  float dif = max(dot(N, SUN), 0.)*texture(SH, uv).r;
   vec4 s = S(uv);
-  vec3 alb = mix(vec3(.78, .65, .47), vec3(.9, .8, .62), fbm(c*.045 + 3.));
+  vec3 alb = mix(vec3(.8, .67, .49), vec3(.91, .81, .63), fbm(c*.045 + 3.));
   alb *= .93 + .14*h(floor(uv*R*.8));
   alb = mix(vec3(.42, .36, .3), alb, smoothstep(.3, 2.5, s.x));
   float rk = rockMask(c);
   vec3 strata = mix(vec3(.52, .38, .29), vec3(.74, .6, .46), .5 + .5*sin(s.x*1.7 + fbm(c*.08)*3.));
   alb = mix(alb, strata*(.9 + .2*n2(c*.4)), rk);
-  alb = mix(alb, alb*vec3(.56, .49, .42), s.w*.85*(1. - rk*.7));
-  float wide = (S(uv + vec2(5.*e.x, 0.)).x + S(uv - vec2(5.*e.x, 0.)).x + S(uv + vec2(0., 5.*e.y)).x + S(uv - vec2(0., 5.*e.y)).x)*.25;
-  float ao = 1. - .35*smoothstep(0., 2., wide - s.x);
-  return alb*(.5 + .62*dif)*ao;
+  alb = mix(alb, alb*vec3(.55, .48, .41), s.z*.85*(1. - rk*.7));
+  return alb*(.36 + .95*dif);
 }
 vec2 gradN(vec2 q){ float a = fbm(q), bx = fbm(q + vec2(.05, 0.)), by = fbm(q + vec2(0., .05)); return vec2(bx - a, by - a)/.05; }
 void main(){
@@ -218,36 +254,31 @@ void main(){
   vec4 s = S(uv);
   float d = s.y;
   vec3 col = sand(uv);
-  if (d > .0015) {
-    float Hl = S(uv - vec2(e.x, 0.)).x + S(uv - vec2(e.x, 0.)).y, Hr = S(uv + vec2(e.x, 0.)).x + S(uv + vec2(e.x, 0.)).y;
-    float Hb = S(uv - vec2(0., e.y)).x + S(uv - vec2(0., e.y)).y, Ht = S(uv + vec2(0., e.y)).x + S(uv + vec2(0., e.y)).y;
-    vec2 gh = vec2(Hr - Hl, Ht - Hb)*.5;
-    vec2 v = texture(VEL, uv).xy;
-    float sp = length(v);
+  if (d > .004) {
+    vec4 l = S(uv - vec2(e.x, 0.)), r = S(uv + vec2(e.x, 0.)), b = S(uv - vec2(0., e.y)), t = S(uv + vec2(0., e.y));
+    vec2 gh = vec2(r.x + r.y - l.x - l.y, t.x + t.y - b.x - b.y)*.5;
+    vec4 vv = texture(VEL, uv);
+    vec2 v = vv.xy; float sp = length(v);
     float ph = TIME*.35, p1 = fract(ph), p2 = fract(ph + .5), w = abs(p1*2. - 1.);
-    vec2 q1 = c*.32 - v*p1*1.6, q2 = c*.32 - v*p2*1.6 + 7.3;
-    vec2 rip = mix(gradN(q1), gradN(q2), w)*(.05 + min(sp, 2.5)*.1);
-    vec3 N = normalize(vec3(-(gh*1.6 + rip), 1.));
-    vec3 bed = sand(uv + N.xy*min(d, 3.)*.0045);
+    vec2 q1 = c*.32 - v*p1*1.4, q2 = c*.32 - v*p2*1.4 + 7.3;
+    vec2 rip = mix(gradN(q1), gradN(q2), w)*(.04 + min(sp, 2.5)*.08);
+    vec3 N = normalize(vec3(-(gh*1.4 + rip), 1.));
+    vec3 bed = sand(uv + N.xy*min(d, 3.)*.004);
     vec2 cq = c*.22 + N.xy*2.;
     float cz = pow(1. - abs(n2(cq + TIME*.18) - n2(cq*1.3 - TIME*.14 + 4.)), 7.);
-    bed += vec3(1., .93, .78)*cz*.45*exp(-d*.7)*smoothstep(.0, .15, d);
-    float turb = clamp(s.z*1.6, 0., .8);
-    vec3 T = exp(-d*mix(vec3(.5, .22, .17), vec3(.3, .38, .5), turb)*1.3);
-    vec3 deep = mix(vec3(.05, .2, .22), vec3(.38, .28, .16), turb);
-    vec3 wc = bed*T + deep*(1. - T);
+    bed += vec3(1., .93, .78)*cz*.4*exp(-d*.7)*smoothstep(.0, .15, d)*texture(SH, uv).r;
+    float mov = smoothstep(0., .02, vv.z)*(.55 + .45*fbm(q1*1.7 + 2.));
+    vec3 T = exp(-d*vec3(.62, .26, .2)*1.4);
+    vec3 wc = mix(bed, bed*vec3(1.05, .92, .75), mov*.6)*T + vec3(.05, .22, .24)*(1. - T);
     vec3 rd = reflect(vec3(0., 0., -1.), N);
-    float fres = .02 + .98*pow(1. - N.z, 5.);
-    wc = mix(wc, vec3(.78, .87, .95), clamp(fres*6., 0., .4));
-    wc += vec3(1., .96, .88)*pow(max(dot(rd, SUN), 0.), 220.)*2.2;
+    wc = mix(wc, vec3(.78, .87, .95), clamp((.02 + .98*pow(1. - N.z, 5.))*6., 0., .35));
+    wc += vec3(1., .96, .88)*pow(max(dot(rd, normalize(SUN)), 0.), 220.)*2.;
     float fn = mix(fbm(q1*2.3), fbm(q2*2.3 + 3.), w);
-    float foam = smoothstep(.55, .8, fn)*smoothstep(1.6, 3.6, sp)*.8;
-    foam += (1. - smoothstep(.0, .07, d))*smoothstep(.4, 1.4, sp)*.25;
-    foam += smoothstep(.9, 2.2, length(gh))*smoothstep(.5, .75, fn)*.5;
-    wc = mix(wc, vec3(.96, .95, .9), clamp(foam, 0., .85));
-    col = mix(col, wc, smoothstep(.0015, .05, d));
+    float foam = smoothstep(.56, .8, fn)*smoothstep(1.8, 3.4, sp)*.7 + smoothstep(1.2, 2.6, length(gh))*smoothstep(.5, .75, fn)*.5;
+    wc = mix(wc, vec3(.96, .95, .9), clamp(foam, 0., .8));
+    col = mix(col, wc, smoothstep(.004, .05, d));
   }
-  col *= mix(.78, 1., smoothstep(1.2, .35, length(uv - .5)*1.3));
+  col *= mix(.8, 1., smoothstep(1.2, .35, length(uv - .5)*1.3));
   col += (h(gl_FragCoord.xy + fract(TIME)*50.) - .5)*.015;
   o = vec4(col, 1.);
 }`;
@@ -270,7 +301,7 @@ function program(fs) {
   for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name] = gl.getUniformLocation(p, a.name); }
   return { p, u };
 }
-const P = { init: program(FS_INIT), clear: program(FS_CLEAR), flux: program(FS_FLUX), water: program(FS_WATER), sedi: program(FS_SEDI), draw: program(FS_DRAW), reduce: program(FS_REDUCE) };
+const P = { init: program(FS_INIT), flux: program(FS_FLUX), water: program(FS_WATER), bed: program(FS_BED), shadow: program(FS_SHADOW), draw: program(FS_DRAW), reduce: program(FS_REDUCE) };
 gl.bindVertexArray(gl.createVertexArray());
 gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
@@ -291,14 +322,15 @@ function fbo(...ts) {
 }
 const F32 = () => tex(GW, GH, gl.RGBA32F, gl.RGBA, gl.FLOAT, LINEAR_OK ? gl.LINEAR : gl.NEAREST);
 
-let GW = 0, GH = 0, stA, stB, flA, flB, vel, fStB_vel, fStA, fFlA, fFlB, seed = Math.random() * 100;
+let GW = 0, GH = 0, stA, stB, flA, flB, vel, shTex, fStA, fStB_vel, fFlA, fFlB, fSh, seed = Math.random() * 100;
 const RW = 32, RH = 20;
 const redTex = tex(RW, RH, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST), redFbo = fbo(redTex), redBuf = new Uint8Array(RW * RH * 4);
 function alloc(w, h) {
-  for (const t of [stA, stB, flA, flB, vel]) if (t) gl.deleteTexture(t);
+  for (const t of [stA, stB, flA, flB, vel, shTex]) if (t) gl.deleteTexture(t);
   GW = w; GH = h;
   stA = F32(); stB = F32(); flA = F32(); flB = F32(); vel = F32();
-  fStA = fbo(stA); fStB_vel = fbo(stB, vel); fFlA = fbo(flA); fFlB = fbo(flB);
+  shTex = tex(GW, GH, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR);
+  fStA = fbo(stA); fStB_vel = fbo(stB, vel); fFlA = fbo(flA); fFlB = fbo(flB); fSh = fbo(shTex);
   reset(false);
 }
 function run(prog, target, w, h) { gl.bindFramebuffer(gl.FRAMEBUFFER, target); gl.viewport(0, 0, w, h); gl.useProgram(prog.p); gl.drawArrays(gl.TRIANGLES, 0, 3); }
@@ -307,46 +339,53 @@ function bind(unit, t, loc) { gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTextu
 function reset(newSeed) {
   if (newSeed) seed = Math.random() * 100;
   gl.useProgram(P.init.p); common(P.init.u); run(P.init, fStA, GW, GH);
-  for (const f of [fFlA, fFlB]) run(P.clear, f, GW, GH);
+  for (const f of [fFlA, fFlB]) { gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]); }
   gl.bindFramebuffer(gl.FRAMEBUFFER, fStB_vel); gl.clearBufferfv(gl.COLOR, 0, [0, 0, 0, 0]); gl.clearBufferfv(gl.COLOR, 1, [0, 0, 0, 0]);
 }
 
 // ---------- state ----------
-let Q = .45, srcOff = 0, time = 0, brush = [0, 0, 7, 0];
+let srcOff = 0, time = 0, brush = [0, 0, 7, 0];
 const hand = { down: false, x: 0, y: 0, px: 0, py: 0, dig: false, push: false };
 let pushU = [0, 0, 0, 0];
-let tool = 'pile', shift = false, flowLevel = 0, wetShare = 0;
+let tool = 'pile', shift = false, flowLevel = 0, paused = false;
 
 function meander(y) { return GW * .5 + Math.sin(y * .012 + seed) * GW * .05 + Math.sin(y * .031 + seed * 2.3) * GW * .015; }
 
 function step(applyBrush) {
-  // flux
-  gl.useProgram(P.flux.p); let u = P.flux.u; common(u); gl.uniform1f(u.DT, DT);
+  let u = P.flux.u;
+  gl.useProgram(P.flux.p); common(u);
+  gl.uniform1f(u.DT, DT); gl.uniform1f(u.GRAV, PRM.g); gl.uniform1f(u.MANN, PRM.n);
   bind(0, stA, u.ST); bind(1, flA, u.FL); run(P.flux, fFlB, GW, GH);
   [flA, flB] = [flB, flA]; [fFlA, fFlB] = [fFlB, fFlA];
-  // water + erosion
-  gl.useProgram(P.water.p); u = P.water.u; common(u);
-  gl.uniform1f(u.DT, DT); gl.uniform1f(u.Q, Q); gl.uniform1f(u.SRC, meander(GH - 1) + srcOff);
-  gl.uniform1f(u.KC, 1.2); gl.uniform1f(u.KS, .025); gl.uniform1f(u.KD, .003);
+
+  u = P.water.u;
+  gl.useProgram(P.water.p); common(u);
+  gl.uniform1f(u.DT, DT); gl.uniform1f(u.GRAV, PRM.g); gl.uniform1f(u.MANN, PRM.n); gl.uniform1f(u.THC, PRM.thc);
+  gl.uniform1f(u.QIN, Q); gl.uniform1f(u.SRC, meander(GH - 1) + srcOff); gl.uniform1f(u.SIG, Math.max(2.5, GW * .008));
+  gl.uniform1f(u.PERC, PRM.perc); gl.uniform1f(u.ABSORB, PRM.absorb); gl.uniform1f(u.HOLD, PRM.hold);
   bind(0, stA, u.ST); bind(1, flA, u.FL); run(P.water, fStB_vel, GW, GH);
-  // sediment + slumping + hand
-  gl.useProgram(P.sedi.p); u = P.sedi.u; common(u); gl.uniform1f(u.DT, DT);
+
+  u = P.bed.u;
+  gl.useProgram(P.bed.p); common(u);
+  gl.uniform1f(u.DT, DT); gl.uniform1f(u.MANN, PRM.n); gl.uniform1f(u.THC, PRM.thc); gl.uniform1f(u.KQ, PRM.kq);
+  gl.uniform1f(u.BETA, PRM.beta); gl.uniform1f(u.MORF, PRM.morf); gl.uniform1f(u.RDRY, PRM.reposeDry); gl.uniform1f(u.RWET, PRM.reposeWet);
   gl.uniform4f(u.BR, brush[0], brush[1], brush[2], applyBrush ? brush[3] : 0);
   gl.uniform4fv(u.PU, pushU);
-  bind(0, stB, u.ST); bind(1, vel, u.VEL); run(P.sedi, fStA, GW, GH);
+  bind(0, stB, u.ST); bind(1, flA, u.FL); run(P.bed, fStA, GW, GH);
 }
 function draw() {
+  gl.useProgram(P.shadow.p); common(P.shadow.u); bind(0, stA, P.shadow.u.ST); run(P.shadow, fSh, GW, GH);
   gl.useProgram(P.draw.p); const u = P.draw.u; common(u);
   gl.uniform2f(u.R, canvas.width, canvas.height); gl.uniform1f(u.TIME, time);
-  bind(0, stA, u.ST); bind(1, vel, u.VEL);
+  bind(0, stA, u.ST); bind(1, vel, u.VEL); bind(2, shTex, u.SH);
   run(P.draw, null, canvas.width, canvas.height);
 }
 function measure() {
   gl.useProgram(P.reduce.p); const u = P.reduce.u; gl.uniform2f(u.R, RW, RH);
   bind(0, stA, u.ST); bind(1, vel, u.VEL); run(P.reduce, redFbo, RW, RH);
   gl.readPixels(0, 0, RW, RH, gl.RGBA, gl.UNSIGNED_BYTE, redBuf);
-  let a = 0, w = 0; for (let i = 0; i < redBuf.length; i += 4) { a += redBuf[i]; w += redBuf[i + 1]; }
-  flowLevel = a / 255 / (RW * RH); wetShare = w / 255 / (RW * RH);
+  let a = 0; for (let i = 0; i < redBuf.length; i += 4) a += redBuf[i];
+  flowLevel = a / 255 / (RW * RH);
 }
 
 let cw = 0, ch = 0;
@@ -358,7 +397,7 @@ function resize() {
   const w = Math.max(96, Math.round(cw * scale)), h = Math.max(96, Math.round(ch * scale));
   if (!GW || Math.abs(w - GW) / GW > .2 || Math.abs(h - GH) / GH > .2) { alloc(w, h); prewarm(); }
 }
-function prewarm() { for (let i = 0; i < (REDUCED ? 700 : 1600); i++) step(false); }
+function prewarm() { for (let i = 0; i < (REDUCED ? 1500 : 3000); i++) step(false); }
 
 // ---------- sound: a brook made of filtered noise; sand hisses when poured ----------
 let AC = null, SND = {};
@@ -417,13 +456,16 @@ canvas.addEventListener('pointermove', e => { [hand.x, hand.y] = toGrid(e); if (
 const up = () => { hand.down = false; };
 canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
 addEventListener('contextmenu', e => e.preventDefault());
+const QMIN = .8, QMAX = 18;
 let meterTimer;
+function showMeter() {
+  $('meterFill').style.height = `${(Math.log(Q / QMIN) / Math.log(QMAX / QMIN)) * 100}%`;
+  $('meter').classList.remove('gone'); clearTimeout(meterTimer); meterTimer = setTimeout(() => $('meter').classList.add('gone'), 1400);
+}
 addEventListener('wheel', e => {
   e.preventDefault();
-  Q = Math.min(1.4, Math.max(.04, Q * Math.exp(-e.deltaY * .0012)));
-  $('meterFill').style.height = `${(Math.log(Q / .04) / Math.log(1.4 / .04)) * 100}%`;
-  $('meter').classList.remove('gone'); clearTimeout(meterTimer); meterTimer = setTimeout(() => $('meter').classList.add('gone'), 1400);
-  touched();
+  Q = Math.min(QMAX, Math.max(QMIN, Q * Math.exp(-e.deltaY * .0012)));
+  showMeter(); touched();
 }, { passive: false });
 addEventListener('keydown', e => {
   initAudio();
@@ -432,8 +474,8 @@ addEventListener('keydown', e => {
   if (e.key === '2') setTool('push');
   if (e.key === '3') setTool('dig');
   if (e.key === 'r' || e.key === 'R') { reset(true); prewarm(); }
-  if (e.key === 'ArrowUp') { Q = Math.min(1.4, Q * 1.2); }
-  if (e.key === 'ArrowDown') { Q = Math.max(.04, Q / 1.2); }
+  if (e.key === 'ArrowUp') { Q = Math.min(QMAX, Q * 1.2); showMeter(); }
+  if (e.key === 'ArrowDown') { Q = Math.max(QMIN, Q / 1.2); showMeter(); }
 });
 addEventListener('keyup', e => { if (e.key === 'Shift') shift = false; });
 addEventListener('resize', resize);
@@ -445,7 +487,7 @@ function touched() { lastTouch = performance.now(); }
 let last = performance.now(), born = performance.now(), measureAt = 0;
 function frame(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now; time += dt;
-  srcOff = Math.sin(time * .011) * GW * .006;
+  srcOff = Math.sin(time * .011) * GW * .004;
   const dig = hand.dig || (hand.down && shift);
   const pushing = hand.down && hand.push && !dig;
   brush = [hand.x, hand.y, Math.max(4, GW * .018), hand.down && !pushing ? (dig ? -.45 : .3) * dt * 60 : 0];
@@ -453,7 +495,7 @@ function frame(now) {
   const ml = Math.hypot(mx, my), cap = .9 * STEPS;
   if (ml > cap) { mx *= cap / ml; my *= cap / ml; }
   pushU = pushing ? [hand.x, hand.y, mx / STEPS, my / STEPS] : [0, 0, 0, 0];
-  for (let i = 0; i < STEPS; i++) step(i === 0 && hand.down && !pushing);
+  if (!paused) for (let i = 0; i < STEPS; i++) step(i === 0 && hand.down && !pushing);
   draw();
   if (now - measureAt > 400) { measureAt = now; measure(); }
   audioTick(dt);
@@ -464,5 +506,23 @@ function frame(now) {
 }
 resize();
 requestAnimationFrame(t => { last = t; frame(t); });
+
+// A measuring hook for local testing only (file://), never present on the published page.
+if (location.protocol === 'file:') {
+  const readTex = (f, att) => {
+    const out = new Float32Array(GW * GH * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.readBuffer(gl.COLOR_ATTACHMENT0 + (att || 0));
+    gl.readPixels(0, 0, GW, GH, gl.RGBA, gl.FLOAT, out); gl.readBuffer(gl.COLOR_ATTACHMENT0);
+    return out;
+  };
+  window.__runnel = {
+    PRM, get size() { return [GW, GH]; }, setQ(v) { Q = v; }, pause(v) { paused = v; },
+    reset(s) { seed = s; reset(false); },
+    steps(n, withBrush) { for (let i = 0; i < n; i++) step(!!withBrush && i === 0); gl.finish(); },
+    brushAt(x, y, amt) { brush = [x, y, Math.max(4, GW * .018), amt]; step(true); brush[3] = 0; },
+    state() { return Array.from(readTex(fStA)); },
+    vel() { return Array.from(readTex(fStB_vel, 1)); },
+  };
+}
 })();
 </script>
