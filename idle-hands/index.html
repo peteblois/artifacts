@@ -1,0 +1,532 @@
+<title>Idle Hands</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@1,6..96,400;1,6..96,900&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one living surface edge to edge; all text is passive margin notes pinned to its four corners. Nothing to press. */
+:root {
+  --ground: #0a0d12;
+  --fg: #ebe5d7;
+  --muted: rgba(235, 229, 215, .52);
+  --faint: rgba(235, 229, 215, .28);
+  --gold: #d8b46a;
+  --f-display: "Bodoni Moda", "Didot", "Bodoni 72", Georgia, serif;
+  --f-mono: "DM Mono", ui-monospace, Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { margin: 0; background: var(--ground); color: var(--fg); overflow: hidden; font: 12px/1.5 var(--f-mono); cursor: default; user-select: none; -webkit-user-select: none; }
+canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+.hud { position: fixed; inset: 0; pointer-events: none; padding: max(18px, env(safe-area-inset-top, 0px)) 20px max(18px, env(safe-area-inset-bottom, 0px)); display: grid; grid-template-rows: auto 1fr auto; text-shadow: 0 1px 12px rgba(0,0,0,.55); }
+.top, .bottom { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
+.bottom { align-items: flex-end; }
+h1 { margin: 0; font: italic 400 40px/1 var(--f-display); letter-spacing: -.01em; }
+h1 b { font-weight: 900; }
+.season { margin-top: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.season em { font-style: normal; color: var(--fg); }
+
+.obs { text-align: right; min-width: 0; }
+.obs h2 { margin: 0 0 6px; font: 500 10px/1 var(--f-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
+.obs ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+.obs li { color: var(--faint); font-style: italic; }
+.obs li.got { color: var(--fg); font-style: normal; }
+.obs li.got::after { content: " ●"; color: var(--gold); }
+.obs li:not(.got)::after { content: " ○"; }
+.obs .clicks { margin-top: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.obs .count { display: none; color: var(--muted); }
+
+.left { display: grid; gap: 6px; min-width: 0; }
+.still { font: italic 400 30px/1 var(--f-display); font-variant-numeric: tabular-nums; }
+.still small { font: 11px/1 var(--f-mono); font-style: normal; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-left: 8px; }
+.typed { font: italic 400 20px/1.2 var(--f-display); min-height: 24px; color: var(--gold); overflow-wrap: anywhere; }
+.typed::after { content: "▍"; color: var(--faint); font-style: normal; animation: blink 1.1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.how { color: var(--muted); max-width: 44ch; text-align: right; }
+.how b { color: var(--fg); font-weight: 500; }
+
+.toast { position: fixed; left: 50%; top: 58%; transform: translate(-50%, -50%); font: italic 400 26px/1.25 var(--f-display); text-align: center; max-width: min(90vw, 34ch); pointer-events: none; opacity: 0; transition: opacity 1.2s ease; text-shadow: 0 2px 24px rgba(0,0,0,.8); text-wrap: balance; }
+.toast.show { opacity: 1; }
+.toast small { display: block; margin-top: 8px; font: 11px/1.4 var(--f-mono); font-style: normal; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+
+.frame { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 3s; border: 16px solid transparent; border-image: linear-gradient(135deg, #8a6a2a, #f3d98a 30%, #7a5a22 55%, #e8c878 80%, #6b4e1c) 1; box-shadow: inset 0 0 0 1px rgba(0,0,0,.6), inset 0 0 60px rgba(0,0,0,.6); }
+.frame.on { opacity: 1; }
+.placard { position: fixed; right: 40px; bottom: 40px; background: #efe9da; color: #1c1a16; padding: 12px 16px; max-width: 280px; font: 11px/1.45 var(--f-mono); opacity: 0; transition: opacity 2s; pointer-events: none; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+.placard.on { opacity: 1; }
+.placard b { display: block; font: italic 400 18px/1.15 var(--f-display); margin-bottom: 4px; }
+.fallback { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; font: italic 22px/1.4 var(--f-display); }
+.fallback[hidden] { display: none; }
+
+@media (max-width: 640px) {
+  h1 { font-size: 30px; }
+  .obs ol, .obs h2 { display: none; }
+  .obs .count { display: block; }
+  .bottom { flex-direction: column; align-items: stretch; gap: 10px; }
+  .how { text-align: left; }
+  .placard { right: 20px; left: 20px; bottom: 120px; max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) { .toast, .frame, .placard { transition: none; } .typed::after { animation: none; } }
+</style>
+
+<canvas id="c" aria-label="A living surface. It responds to where your cursor rests, to what you type, to scrolling, and to your absence."></canvas>
+<div class="frame" id="frame"></div>
+<div class="hud">
+  <div class="top">
+    <div>
+      <h1><b>Idle</b> Hands</h1>
+      <div class="season" id="season"></div>
+    </div>
+    <div class="obs">
+      <h2>Observations</h2>
+      <ol id="obs"></ol>
+      <div class="count" id="obscount"></div>
+      <div class="clicks" id="clicks">clicks: 0</div>
+    </div>
+  </div>
+  <div></div>
+  <div class="bottom">
+    <div class="left">
+      <div class="still" id="still">0:00<small>still</small></div>
+      <div class="typed" id="typed"></div>
+    </div>
+    <div class="how" id="how"><b>Don't click.</b> Rest the cursor somewhere and wait. Type a word. Scroll, or press ← →, to turn the season. Or leave, and come back later.</div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<div class="placard" id="placard"></div>
+<div class="fallback" id="fallback" hidden>This surface needs WebGL 2 with float render targets, which this browser isn't offering.</div>
+
+<script>
+(() => {
+'use strict';
+const $ = id => document.getElementById(id);
+const canvas = $('c');
+const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false });
+if (!gl || !(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'))) { $('fallback').hidden = false; return; }
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const STEPS = REDUCED ? 5 : 12;
+
+// Gray–Scott feed (f) and kill (k) rates. Each season is a region of the f/k map.
+const SEASONS = [
+  { name: 'Coral',    f: .0545, k: .0620, pal: ['#081820', '#1d6a74', '#f0b9a2', '#fff1e4'] },
+  { name: 'Mitosis',  f: .0367, k: .0649, pal: ['#100d1b', '#56398a', '#ebe3f7', '#ffffff'] },
+  { name: 'Labyrinth', f: .0420, k: .0590, pal: ['#14110c', '#6a5838', '#ebdfc4', '#fffaf0'] },
+  { name: 'Lichen',   f: .0300, k: .0620, pal: ['#0c130f', '#3c6a38', '#d9e27c', '#fdfbd4'] },
+  { name: 'Worms',    f: .0780, k: .0610, pal: ['#190e0c', '#7a2d21', '#f1a45c', '#ffe4bc'] },
+  { name: 'Bubbles',  f: .0980, k: .0555, pal: ['#0b1120', '#294c8e', '#cbd9ff', '#ffffff'] },
+  { name: 'Graphite', f: .0260, k: .0510, pal: ['#0f0f13', '#4a4a55', '#d8d4cc', '#ffffff'] },
+];
+const GOLD = ['#130f09', '#8a6a2a', '#f3d98a', '#fff6d8'];
+
+const OBS = [
+  { id: 'still10', name: 'Stillness', hint: 'Rest the cursor.' },
+  { id: 'still60', name: 'Patience', hint: 'Rest it longer.' },
+  { id: 'nothing', name: 'Nothing at all', hint: 'Do nothing for five minutes.' },
+  { id: 'stir', name: 'Stirring', hint: 'Disturb it.' },
+  { id: 'word', name: 'First word', hint: 'Say something.' },
+  { id: 'away', name: 'Absence', hint: 'Leave.' },
+  { id: 'over', name: 'Overgrowth', hint: 'Let it spread.' },
+  { id: 'year', name: 'A full year', hint: 'See every season.' },
+  { id: 'boredom', name: 'Boredom', hint: 'Name the feeling.' },
+  { id: 'life', name: 'Life', hint: 'Name what it is doing.' },
+  { id: 'art', name: 'Art', hint: 'Name what it is.' },
+  { id: 'beauty', name: 'Beauty', hint: 'Name what you want from it.' },
+];
+const CLICK_LINES = [
+  'You clicked. It noticed.', 'Again. Nothing happens when you click.', 'Clicking is a kind of impatience.',
+  'Your hands want something to do.', 'It is still not a button.', 'All right. Keep count, then.',
+];
+
+// ---------- GL plumbing ----------
+const VS = `#version 300 es
+in vec2 p; void main(){ gl_Position = vec4(p, 0., 1.); }`;
+const NOISE = `
+float h(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float n2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.-2.*f);
+  return mix(mix(h(i), h(i+vec2(1,0)), f.x), mix(h(i+vec2(0,1)), h(i+1.), f.x), f.y); }
+float fbm(vec2 p){ return .5*n2(p) + .3*n2(p*2.03+7.) + .2*n2(p*4.1+3.); }`;
+const FS_INIT = `#version 300 es
+precision highp float; out vec4 o; void main(){ o = vec4(1., 0., 0., 1.); }`;
+const FS_SIM = `#version 300 es
+precision highp float;
+uniform sampler2D S; uniform sampler2D T; uniform vec2 R; uniform vec4 FK; uniform float MIX; uniform float TIME;
+uniform vec4 BR; uniform vec2 BM; uniform float STAMP;
+out vec4 o;
+${NOISE}
+void main(){
+  vec2 px = 1./R, uv = gl_FragCoord.xy*px;
+  vec2 c = texture(S, uv).xy;
+  vec2 l = -c
+    + .2*(texture(S, uv+vec2(px.x,0.)).xy + texture(S, uv-vec2(px.x,0.)).xy + texture(S, uv+vec2(0.,px.y)).xy + texture(S, uv-vec2(0.,px.y)).xy)
+    + .05*(texture(S, uv+px).xy + texture(S, uv-px).xy + texture(S, uv+vec2(px.x,-px.y)).xy + texture(S, uv+vec2(-px.x,px.y)).xy);
+  vec2 q = gl_FragCoord.xy/160.;
+  float n = fbm(q + vec2(TIME*.004, -TIME*.003));
+  float m = smoothstep(0., 1., MIX*2.2 - .6 + (n-.5)*1.2);
+  vec2 fk = mix(FK.xy, FK.zw, m) + (fbm(q*.6 + 11.) - .5)*vec2(.003, .0012);
+  float u = c.x, v = c.y, r = u*v*v;
+  u += l.x - r + fk.x*(1.-u);
+  v += .5*l.y + r - (fk.x+fk.y)*v;
+  if (BM.x > .5) {
+    float d = length(gl_FragCoord.xy - BR.xy);
+    if (BM.x < 1.5) { float a = BM.y*exp(-pow((d-BR.z)/BR.w, 2.)); u = mix(u, .5, a); v = mix(v, .25, a); }
+    else { float a = BM.y*(1. - smoothstep(BR.z*.55, BR.z, d)); u = mix(u, 1., a); v = mix(v, 0., a); }
+  }
+  if (STAMP > .5) { float s = texture(T, uv).r; u = mix(u, .5, s); v = mix(v, .25, s); }
+  o = vec4(clamp(u, 0., 1.), clamp(v, 0., 1.), 0., 1.);
+}`;
+const FS_DRAW = `#version 300 es
+precision highp float;
+uniform sampler2D S; uniform vec2 R; uniform vec2 SR; uniform vec3 L; uniform vec3 C0, C1, C2, C3; uniform float TIME; uniform vec3 HALO; uniform float PRESENT;
+out vec4 o;
+${NOISE}
+void main(){
+  vec2 uv = gl_FragCoord.xy/R, e = 1./SR;
+  float v = texture(S, uv).y;
+  float vx = texture(S, uv+vec2(e.x,0.)).y - texture(S, uv-vec2(e.x,0.)).y;
+  float vy = texture(S, uv+vec2(0.,e.y)).y - texture(S, uv-vec2(0.,e.y)).y;
+  vec3 N = normalize(vec3(-vx*5., -vy*5., 1.));
+  vec3 P = vec3(gl_FragCoord.xy, v*60.);
+  vec3 Ld = normalize(L - P);
+  float dif = max(dot(N, Ld), 0.);
+  vec3 H = normalize(Ld + vec3(0., 0., 1.));
+  float sp = pow(max(dot(N, H), 0.), 70.);
+  float t1 = smoothstep(.06, .2, v), t2 = smoothstep(.2, .36, v);
+  vec3 base = mix(C0, mix(C1, C2, t2), t1);
+  float dist = length(gl_FragCoord.xy - L.xy)/max(R.x, R.y);
+  float pool = mix(.55, exp(-dist*dist*5.), PRESENT);
+  vec3 col = base*(.22 + .95*dif*(.4 + .6*pool)) + C3*sp*t1*(.25 + .95*pool)*.75;
+  col += C1*.07*pool*(1.-t1);
+  float vig = smoothstep(1.25, .25, length(uv - .5)*1.35);
+  col *= mix(.62, 1., vig);
+  col += (h(gl_FragCoord.xy + fract(TIME)*100.) - .5)*.02;
+  if (HALO.z > 0.) { float d = abs(length(gl_FragCoord.xy - HALO.xy) - HALO.z); col += C3*.22*smoothstep(1.6, 0., d); }
+  o = vec4(col, 1.);
+}`;
+const FS_REDUCE = `#version 300 es
+precision highp float; uniform sampler2D S; uniform vec2 R; out vec4 o;
+void main(){ float v = texture(S, gl_FragCoord.xy/R).y; o = vec4(step(.18, v), 0., 0., 1.); }`;
+
+function shader(type, src) {
+  const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s));
+  return s;
+}
+function program(fs) {
+  const p = gl.createProgram();
+  gl.attachShader(p, shader(gl.VERTEX_SHADER, VS)); gl.attachShader(p, shader(gl.FRAGMENT_SHADER, fs));
+  gl.bindAttribLocation(p, 0, 'p'); gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+  const u = {}; const n = gl.getProgramParameter(p, gl.ACTIVE_UNIFORMS);
+  for (let i = 0; i < n; i++) { const a = gl.getActiveUniform(p, i); u[a.name] = gl.getUniformLocation(p, a.name); }
+  return { p, u };
+}
+const P = { init: program(FS_INIT), sim: program(FS_SIM), draw: program(FS_DRAW), reduce: program(FS_REDUCE) };
+const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
+
+function tex(w, h, internal, format, type, filter, wrap) {
+  const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+  gl.texImage2D(gl.TEXTURE_2D, 0, internal, w, h, 0, format, type, null);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, filter); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, filter);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, wrap); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, wrap);
+  return t;
+}
+function fbo(t) { const f = gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER, f); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t, 0); return f; }
+
+let SW = 0, SH = 0, A, B, stampTex, cw = 0, ch = 0, dpr = 1;
+const RW = 48, RH = 32;
+const redTex = tex(RW, RH, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST, gl.CLAMP_TO_EDGE), redFbo = fbo(redTex);
+const redBuf = new Uint8Array(RW * RH * 4);
+const stampCanvas = document.createElement('canvas'); const sctx = stampCanvas.getContext('2d');
+
+function allocSim(w, h) {
+  SW = w; SH = h;
+  for (const X of [A, B]) if (X) { gl.deleteTexture(X.t); gl.deleteFramebuffer(X.f); }
+  const mk = () => { const t = tex(w, h, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, gl.LINEAR, gl.REPEAT); return { t, f: fbo(t) }; };
+  A = mk(); B = mk();
+  if (stampTex) gl.deleteTexture(stampTex);
+  stampTex = tex(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR, gl.CLAMP_TO_EDGE);
+  stampCanvas.width = w; stampCanvas.height = h;
+  gl.bindFramebuffer(gl.FRAMEBUFFER, A.f); gl.viewport(0, 0, w, h); gl.useProgram(P.init.p); gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+
+// ---------- state ----------
+let season = 0, prevSeason = 0, seasonT = 1, seasonClock = 0, seasonsSeen = new Set([0]);
+let palette = SEASONS[0].pal.map(hex), goldUntil = 0;
+let pointer = { x: 0, y: 0, in: false, moved: 0, lastX: 0, lastY: 0 };
+let still = 0, stirTime = 0, pulseClock = 0, pulseN = 0, lastInput = performance.now(), everInput = false;
+let typed = '', typedAt = 0, catchUp = 0, freezeUntil = 0, hiddenAt = 0, clicks = 0, coverage = 0;
+let pendingStamp = false, time = 0, wheelAcc = 0, wheelAt = 0, artN = 0;
+let earned = {};
+try { earned = JSON.parse(localStorage.getItem('idle-hands-obs') || '{}') || {}; } catch { earned = {}; }
+try { clicks = +localStorage.getItem('idle-hands-clicks') || 0; } catch {}
+
+function hex(s) { return [1, 3, 5].map(k => parseInt(s.slice(k, k + 2), 16) / 255); }
+function lerp3(a, b, t) { return a.map((v, i) => v + (b[i] - v) * t); }
+
+// ---------- stamping (words and seeds are drawn to a 2D canvas, then fed into the medium) ----------
+function stamp(fn) {
+  sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.clearRect(0, 0, SW, SH);
+  sctx.fillStyle = '#fff'; sctx.strokeStyle = '#fff';
+  fn(sctx);
+  gl.bindTexture(gl.TEXTURE_2D, stampTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, stampCanvas);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  pendingStamp = true;
+}
+function stampWord(word, cx, cy, big) {
+  stamp(c => {
+    let size = SH * (big ? .3 : .2 + Math.random() * .1);
+    c.font = `italic 900 ${size}px "Bodoni Moda", Didot, Georgia, serif`;
+    const w = c.measureText(word).width;
+    if (w > SW * .82) { size *= SW * .82 / w; c.font = `italic 900 ${size}px "Bodoni Moda", Didot, Georgia, serif`; }
+    c.translate(cx, cy); c.rotate((Math.random() - .5) * .22);
+    c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineWidth = Math.max(1, size * .035);
+    c.fillText(word, 0, 0); c.strokeText(word, 0, 0);
+  });
+}
+function stampDots(n) {
+  stamp(c => { for (let i = 0; i < n; i++) { c.beginPath(); c.arc(Math.random() * SW, Math.random() * SH, 1.5 + Math.random() * 3, 0, 7); c.fill(); } });
+}
+
+// ---------- simulation passes ----------
+let brush = [0, 0, 0, 1], brushMode = [0, 0];
+function simSteps(n) {
+  const s = SEASONS[season], ps = SEASONS[prevSeason];
+  gl.useProgram(P.sim.p); gl.viewport(0, 0, SW, SH);
+  const u = P.sim.u;
+  gl.uniform2f(u.R, SW, SH); gl.uniform4f(u.FK, ps.f, ps.k, s.f, s.k); gl.uniform1f(u.MIX, seasonT); gl.uniform1f(u.TIME, time);
+  gl.uniform4f(u.BR, brush[0], brush[1], brush[2], brush[3]); gl.uniform1i(u.S, 0); gl.uniform1i(u.T, 1);
+  gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, stampTex); gl.activeTexture(gl.TEXTURE0);
+  for (let i = 0; i < n; i++) {
+    gl.uniform2f(u.BM, brushMode[0], brushMode[1]);
+    gl.uniform1f(u.STAMP, pendingStamp ? 1 : 0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, B.f); gl.bindTexture(gl.TEXTURE_2D, A.t);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    [A, B] = [B, A];
+    pendingStamp = false;
+  }
+}
+function drawScreen(halo) {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, canvas.width, canvas.height);
+  gl.useProgram(P.draw.p); const u = P.draw.u;
+  gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, A.t); gl.uniform1i(u.S, 0);
+  gl.uniform2f(u.R, canvas.width, canvas.height); gl.uniform2f(u.SR, SW, SH);
+  const lx = pointer.in ? pointer.x * dpr : canvas.width * (.5 + .3 * Math.cos(time * .07));
+  const ly = pointer.in ? canvas.height - pointer.y * dpr : canvas.height * (.55 + .25 * Math.sin(time * .05));
+  gl.uniform3f(u.L, lx, ly, Math.max(canvas.width, canvas.height) * .3);
+  gl.uniform1f(u.PRESENT, pointer.in ? 1 : .6);
+  gl.uniform3fv(u.C0, palette[0]); gl.uniform3fv(u.C1, palette[1]); gl.uniform3fv(u.C2, palette[2]); gl.uniform3fv(u.C3, palette[3]);
+  gl.uniform1f(u.TIME, time);
+  gl.uniform3f(u.HALO, lx, ly, halo * dpr);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+}
+function measure() {
+  gl.bindFramebuffer(gl.FRAMEBUFFER, redFbo); gl.viewport(0, 0, RW, RH);
+  gl.useProgram(P.reduce.p); gl.bindTexture(gl.TEXTURE_2D, A.t); gl.uniform1i(P.reduce.u.S, 0); gl.uniform2f(P.reduce.u.R, RW, RH);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  gl.readPixels(0, 0, RW, RH, gl.RGBA, gl.UNSIGNED_BYTE, redBuf);
+  let s = 0; for (let i = 0; i < redBuf.length; i += 4) s += redBuf[i];
+  coverage = s / 255 / (RW * RH);
+}
+
+// ---------- sizing ----------
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  cw = innerWidth; ch = innerHeight;
+  canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
+  const scale = Math.min(.5, 900 / Math.max(cw, ch));
+  const w = Math.max(64, Math.round(cw * scale)), h = Math.max(64, Math.round(ch * scale));
+  if (!SW || Math.abs(w - SW) / SW > .18 || Math.abs(h - SH) / SH > .18) { allocSim(w, h); seed(); }
+}
+function seed() {
+  stampDots(40); simSteps(1);
+  stampWord('idle hands', SW / 2, SH / 2, true); simSteps(1);
+  simSteps(REDUCED ? 400 : 900);
+}
+
+// ---------- observations & messages ----------
+function renderObs() {
+  $('obs').innerHTML = OBS.map(o => `<li class="${earned[o.id] ? 'got' : ''}">${earned[o.id] ? o.name : o.hint}</li>`).join('');
+  $('obscount').textContent = `${Object.keys(earned).filter(k => OBS.some(o => o.id === k)).length} of ${OBS.length} observed`;
+  $('clicks').textContent = `clicks: ${clicks}`;
+}
+function earn(id) {
+  if (earned[id]) return;
+  earned[id] = Date.now();
+  try { localStorage.setItem('idle-hands-obs', JSON.stringify(earned)); } catch {}
+  const o = OBS.find(o => o.id === id);
+  toast(o.name, 'Observed');
+  renderObs();
+}
+let toastTimer;
+function toast(text, kicker, ms = 4200) {
+  const t = $('toast'); t.innerHTML = `${text}${kicker ? `<small>${kicker}</small>` : ''}`; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+}
+function fmt(sec) {
+  sec = Math.floor(sec); const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60;
+  return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+}
+function fmtLong(sec) {
+  sec = Math.round(sec); const m = Math.floor(sec / 60), s = sec % 60;
+  if (m >= 60) return `${Math.floor(m / 60)} h ${m % 60} min`;
+  return m ? `${m} min ${s} s` : `${s} seconds`;
+}
+function renderSeason() {
+  const s = SEASONS[season];
+  $('season').innerHTML = `Season ${roman(seasonsCount + 1)} · <em>${s.name}</em> · f ${s.f.toFixed(4)} k ${s.k.toFixed(4)} · ${Math.round(coverage * 100)}% grown`;
+}
+let seasonsCount = 0;
+function roman(n) { const r = [['M',1000],['CM',900],['D',500],['CD',400],['C',100],['XC',90],['L',50],['XL',40],['X',10],['IX',9],['V',5],['IV',4],['I',1]]; let o = ''; for (const [s, v] of r) while (n >= v) { o += s; n -= v; } return o; }
+
+function setSeason(i, quiet) {
+  i = (i + SEASONS.length) % SEASONS.length;
+  if (i === season) return;
+  prevSeason = season; season = i; seasonT = 0; seasonClock = 0; seasonsCount++;
+  seasonsSeen.add(i); if (seasonsSeen.size === SEASONS.length) earn('year');
+  stampDots(12);
+  if (!quiet) toast(SEASONS[i].name, `Season ${roman(seasonsCount + 1)}`, 2600);
+  renderSeason();
+}
+
+// ---------- words ----------
+const SECRETS = {
+  boredom() { freezeUntil = performance.now() + 20000; toast('Everything stops.', 'Keep watching', 6000); earn('boredom'); },
+  life() { setSeason(1, true); toast('It divides.', 'Mitosis', 4000); earn('life'); },
+  art() {
+    artN++;
+    const s = SEASONS[season];
+    $('placard').innerHTML = `<b>Idle Hands, No. ${artN}</b>Gray–Scott reaction–diffusion on screen, ${new Date().getFullYear()}.<br>${s.name}: feed ${s.f.toFixed(4)}, kill ${s.k.toFixed(4)}.<br>Attention: ${fmtLong(time)}.`;
+    $('placard').classList.add('on'); $('frame').classList.add('on');
+    setTimeout(() => { $('placard').classList.remove('on'); $('frame').classList.remove('on'); }, 30000);
+    earn('art');
+  },
+  beauty() { goldUntil = performance.now() + 90000; toast('Gold leaf, for a while.', 'Beauty', 4000); earn('beauty'); },
+  clear() { stamp(c => {}); gl.bindFramebuffer(gl.FRAMEBUFFER, A.f); gl.viewport(0, 0, SW, SH); gl.useProgram(P.init.p); gl.drawArrays(gl.TRIANGLES, 0, 3); toast('Wiped.', null, 2000); },
+};
+function commitWord() {
+  const w = typed.trim(); typed = ''; renderTyped();
+  if (!w) return;
+  const key = w.toLowerCase().replace(/[^a-z]/g, '');
+  const cx = pointer.in ? pointer.x / cw * SW : SW * (.25 + Math.random() * .5);
+  const cy = pointer.in ? (1 - pointer.y / ch) * SH : SH * (.3 + Math.random() * .4);
+  if (key !== 'clear') stampWord(w, cx, cy, false);
+  earn('word');
+  if (SECRETS[key]) SECRETS[key]();
+}
+function renderTyped() { $('typed').textContent = typed; }
+
+// ---------- input: everything except clicks ----------
+function noteInput() { lastInput = performance.now(); everInput = true; }
+addEventListener('pointermove', e => {
+  const dx = e.clientX - pointer.x, dy = e.clientY - pointer.y;
+  if (pointer.in) pointer.moved += Math.hypot(dx, dy);
+  pointer.x = e.clientX; pointer.y = e.clientY;
+  if (!pointer.in) { pointer.in = true; try { window.focus(); } catch {} }
+  noteInput();
+});
+document.documentElement.addEventListener('pointerleave', () => { pointer.in = false; still = 0; });
+addEventListener('blur', () => { /* keep pointer state; focus loss alone isn't absence */ });
+addEventListener('pointerdown', e => {
+  clicks++; try { localStorage.setItem('idle-hands-clicks', String(clicks)); } catch {}
+  toast(CLICK_LINES[Math.min(clicks - 1, CLICK_LINES.length - 1)], clicks > CLICK_LINES.length ? `${clicks} clicks` : null, 2600);
+  renderObs();
+  if (e.pointerType !== 'mouse') { pointer.x = e.clientX; pointer.y = e.clientY; pointer.in = true; }
+});
+addEventListener('pointerup', e => { if (e.pointerType !== 'mouse') { pointer.in = false; still = 0; } });
+addEventListener('contextmenu', e => e.preventDefault());
+addEventListener('wheel', e => {
+  e.preventDefault(); noteInput();
+  wheelAcc += e.deltaY + e.deltaX;
+  const now = performance.now();
+  if (Math.abs(wheelAcc) > 160 && now - wheelAt > 1400) { setSeason(season + Math.sign(wheelAcc)); wheelAcc = 0; wheelAt = now; }
+}, { passive: false });
+addEventListener('keydown', e => {
+  noteInput();
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); setSeason(season + 1); return; }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); setSeason(season - 1); return; }
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); commitWord(); return; }
+  if (e.key === 'Backspace') { e.preventDefault(); typed = typed.slice(0, -1); renderTyped(); typedAt = performance.now(); return; }
+  if (e.key.length === 1 && typed.length < 24) { typed += e.key; typedAt = performance.now(); renderTyped(); }
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = performance.now(); return; }
+  if (!hiddenAt) return;
+  const away = (performance.now() - hiddenAt) / 1000; hiddenAt = 0;
+  lastInput = performance.now();
+  if (away < 5) return;
+  catchUp += Math.min(away * 60 * STEPS * .25, 24000);
+  const turns = Math.min(Math.floor(away / 90), SEASONS.length - 1);
+  if (turns) setSeason(season + turns, true);
+  toast(`You were gone ${fmtLong(away)}. It kept going.`, turns ? `${SEASONS[season].name} now` : null, 5200);
+  if (away >= 30) earn('away');
+});
+addEventListener('resize', resize);
+
+// ---------- loop ----------
+let last = performance.now(), measureAt = 0;
+function frame(now) {
+  const dt = Math.min(.1, (now - last) / 1000); last = now; time += dt;
+  const frozen = now < freezeUntil;
+
+  // seasons turn on their own, and palettes follow
+  if (!frozen) { seasonClock += dt; if (seasonClock > 85) setSeason(season + 1); }
+  seasonT = Math.min(1, seasonT + dt / 9);
+  const target = now < goldUntil ? GOLD.map(hex) : lerp3Pal(SEASONS[prevSeason].pal, SEASONS[season].pal, seasonT);
+  palette = palette.map((c, i) => lerp3(c, target[i], Math.min(1, dt * 1.5)));
+
+  // the cursor: resting seeds, rushing erases
+  const speed = pointer.moved / Math.max(dt * 60, 1); pointer.moved = 0;
+  brushMode = [0, 0];
+  const bx = pointer.x / cw * SW, by = (1 - pointer.y / ch) * SH;
+  if (pointer.in && speed < .6) {
+    still += dt;
+    if (still > 1.2) {
+      pulseClock += dt;
+      if (pulseClock > 1.1) { pulseClock = 0; pulseN++; brush = [bx, by, 3 + (pulseN % 6) * 5, 1.6]; brushMode = [1, .09]; }
+    }
+    if (still >= 10) earn('still10');
+    if (still >= 60) earn('still60');
+  } else {
+    still = 0; pulseClock = 0;
+    if (pointer.in && speed > 28) {
+      stirTime += dt; if (stirTime > 2) earn('stir');
+      brush = [bx, by, Math.min(20 + speed * .8, 120) * SW / cw, 1]; brushMode = [2, .35];
+    } else stirTime = Math.max(0, stirTime - dt);
+  }
+  if ((now - lastInput) / 1000 >= 300 && !document.hidden) earn('nothing');
+
+  if (typed && now - typedAt > 2600) commitWord();
+
+  // run the medium
+  if (!frozen) {
+    let n = STEPS;
+    if (catchUp > 0) { const k = Math.min(catchUp, 180); n += k; catchUp -= k; }
+    simSteps(n);
+  }
+  const halo = pointer.in && still > 1.2 ? 14 + Math.min(still, 120) * .9 : 0;
+  drawScreen(halo);
+
+  if (now - measureAt > 900) {
+    measureAt = now; measure();
+    if (coverage > .45) earn('over');
+    if (coverage < .03 && !frozen) stampDots(coverage < .005 ? 30 : 10);
+    renderSeason();
+  }
+  $('still').innerHTML = `${fmt(pointer.in ? still : (now - lastInput) / 1000)}<small>${frozen ? 'frozen' : pointer.in ? 'still' : 'untouched'}</small>`;
+  requestAnimationFrame(frame);
+}
+function lerp3Pal(a, b, t) { return a.map((c, i) => lerp3(hex(c), hex(b[i]), t)); }
+
+async function start() {
+  try { await Promise.race([document.fonts.load('italic 900 100px "Bodoni Moda"'), new Promise(r => setTimeout(r, 1500))]); } catch {}
+  resize(); renderObs(); renderSeason();
+  requestAnimationFrame(t => { last = t; frame(t); });
+}
+start();
+})();
+</script>
