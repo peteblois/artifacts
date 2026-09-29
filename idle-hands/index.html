@@ -1,99 +1,56 @@
 <title>Idle Hands</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@1,6..96,400;1,6..96,900&family=DM+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:ital,opsz,wght@1,6..96,400;1,6..96,900&family=DM+Mono:wght@400&display=swap">
 <style>
-/* Layout: one living surface edge to edge; all text is passive margin notes pinned to its four corners. Nothing to press. */
+/* Layout: a pool of liquid metal, edge to edge. Text only surfaces briefly, then sinks. */
 :root {
-  --ground: #0a0d12;
-  --fg: #ebe5d7;
-  --muted: rgba(235, 229, 215, .52);
-  --faint: rgba(235, 229, 215, .28);
-  --gold: #d8b46a;
+  --ground: #050608;
+  --fg: #ece7dc;
+  --muted: rgba(236, 231, 220, .45);
+  --faint: rgba(236, 231, 220, .18);
+  --gold: #e2c07e;
   --f-display: "Bodoni Moda", "Didot", "Bodoni 72", Georgia, serif;
   --f-mono: "DM Mono", ui-monospace, Menlo, Consolas, monospace;
   color-scheme: dark;
 }
 html, body { height: 100%; }
-body { margin: 0; background: var(--ground); color: var(--fg); overflow: hidden; font: 12px/1.5 var(--f-mono); cursor: default; user-select: none; -webkit-user-select: none; }
+body { margin: 0; background: var(--ground); color: var(--fg); overflow: hidden; font: 11px/1.5 var(--f-mono); cursor: none; user-select: none; -webkit-user-select: none; }
 canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-.hud { position: fixed; inset: 0; pointer-events: none; padding: max(18px, env(safe-area-inset-top, 0px)) 20px max(18px, env(safe-area-inset-bottom, 0px)); display: grid; grid-template-rows: auto 1fr auto; text-shadow: 0 1px 12px rgba(0,0,0,.55); }
-.top, .bottom { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
-.bottom { align-items: flex-end; }
-h1 { margin: 0; font: italic 400 40px/1 var(--f-display); letter-spacing: -.01em; }
-h1 b { font-weight: 900; }
-.season { margin-top: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.season em { font-style: normal; color: var(--fg); }
+.fade { transition: opacity 3.5s ease; }
+.gone { opacity: 0 !important; }
 
-.obs { text-align: right; min-width: 0; }
-.obs h2 { margin: 0 0 6px; font: 500 10px/1 var(--f-mono); letter-spacing: .16em; text-transform: uppercase; color: var(--muted); }
-.obs ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
-.obs li { color: var(--faint); font-style: italic; }
-.obs li.got { color: var(--fg); font-style: normal; }
-.obs li.got::after { content: " ●"; color: var(--gold); }
-.obs li:not(.got)::after { content: " ○"; }
-.obs .clicks { margin-top: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.obs .count { display: none; color: var(--muted); }
-
-.left { display: grid; gap: 6px; min-width: 0; }
-.still { font: italic 400 30px/1 var(--f-display); font-variant-numeric: tabular-nums; }
-.still small { font: 11px/1 var(--f-mono); font-style: normal; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; margin-left: 8px; }
-.typed { font: italic 400 20px/1.2 var(--f-display); min-height: 24px; color: var(--gold); overflow-wrap: anywhere; }
-.typed::after { content: "▍"; color: var(--faint); font-style: normal; animation: blink 1.1s steps(1) infinite; }
-@keyframes blink { 50% { opacity: 0; } }
-.how { color: var(--muted); max-width: 44ch; text-align: right; }
-.how b { color: var(--fg); font-weight: 500; }
-
-.toast { position: fixed; left: 50%; top: 58%; transform: translate(-50%, -50%); font: italic 400 26px/1.25 var(--f-display); text-align: center; max-width: min(90vw, 34ch); pointer-events: none; opacity: 0; transition: opacity 1.2s ease; text-shadow: 0 2px 24px rgba(0,0,0,.8); text-wrap: balance; }
-.toast.show { opacity: 1; }
-.toast small { display: block; margin-top: 8px; font: 11px/1.4 var(--f-mono); font-style: normal; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+.title { position: fixed; top: max(22px, env(safe-area-inset-top, 0px)); left: 24px; margin: 0; font: italic 400 22px/1 var(--f-display); color: var(--muted); pointer-events: none; }
+.title b { font-weight: 900; }
+.hint { position: fixed; left: 0; right: 0; bottom: max(26px, env(safe-area-inset-bottom, 0px)); text-align: center; color: var(--muted); letter-spacing: .22em; text-transform: lowercase; pointer-events: none; padding-inline: 16px; }
+.hint span { color: var(--faint); }
+.typed { position: fixed; left: 0; right: 0; bottom: 64px; text-align: center; font: italic 400 26px/1 var(--f-display); color: var(--gold); pointer-events: none; min-height: 26px; padding-inline: 16px; overflow-wrap: anywhere; text-shadow: 0 2px 20px rgba(0,0,0,.9); }
+.word { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); font: italic 400 30px/1.2 var(--f-display); color: var(--fg); opacity: 0; transition: opacity 1.6s ease; pointer-events: none; text-align: center; max-width: 90vw; text-shadow: 0 2px 30px rgba(0,0,0,.95); }
+.word.show { opacity: .85; }
+.dots { position: fixed; right: 24px; bottom: max(28px, env(safe-area-inset-bottom, 0px)); display: flex; gap: 6px; pointer-events: none; }
+.dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--faint); display: block; transition: background 2s, box-shadow 2s; }
+.dots i.on { background: var(--gold); box-shadow: 0 0 8px var(--gold); }
 
 .frame { position: fixed; inset: 0; pointer-events: none; opacity: 0; transition: opacity 3s; border: 16px solid transparent; border-image: linear-gradient(135deg, #8a6a2a, #f3d98a 30%, #7a5a22 55%, #e8c878 80%, #6b4e1c) 1; box-shadow: inset 0 0 0 1px rgba(0,0,0,.6), inset 0 0 60px rgba(0,0,0,.6); }
 .frame.on { opacity: 1; }
-.placard { position: fixed; right: 40px; bottom: 40px; background: #efe9da; color: #1c1a16; padding: 12px 16px; max-width: 280px; font: 11px/1.45 var(--f-mono); opacity: 0; transition: opacity 2s; pointer-events: none; box-shadow: 0 8px 24px rgba(0,0,0,.5); }
+.placard { position: fixed; right: 40px; bottom: 48px; background: #efe9da; color: #1c1a16; padding: 12px 16px; max-width: 260px; font: 10px/1.5 var(--f-mono); opacity: 0; transition: opacity 2s; pointer-events: none; box-shadow: 0 8px 24px rgba(0,0,0,.6); }
 .placard.on { opacity: 1; }
-.placard b { display: block; font: italic 400 18px/1.15 var(--f-display); margin-bottom: 4px; }
-.fallback { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; font: italic 22px/1.4 var(--f-display); }
+.placard b { display: block; font: italic 400 17px/1.15 var(--f-display); margin-bottom: 4px; }
+.fallback { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; font: italic 20px/1.4 var(--f-display); }
 .fallback[hidden] { display: none; }
-
-@media (max-width: 640px) {
-  h1 { font-size: 30px; }
-  .obs ol, .obs h2 { display: none; }
-  .obs .count { display: block; }
-  .bottom { flex-direction: column; align-items: stretch; gap: 10px; }
-  .how { text-align: left; }
-  .placard { right: 20px; left: 20px; bottom: 120px; max-width: none; }
-}
-@media (prefers-reduced-motion: reduce) { .toast, .frame, .placard { transition: none; } .typed::after { animation: none; } }
+@media (max-width: 640px) { .hint { letter-spacing: .12em; } .placard { left: 20px; right: 20px; max-width: none; } }
+@media (prefers-reduced-motion: reduce) { .fade, .word, .frame, .placard, .dots i { transition: none; } }
 </style>
 
-<canvas id="c" aria-label="A living surface. It responds to where your cursor rests, to what you type, to scrolling, and to your absence."></canvas>
+<canvas id="c" aria-label="A pool of liquid metal. It grows where the cursor rests, takes in what you type, turns with the scroll wheel, and keeps going when you leave."></canvas>
 <div class="frame" id="frame"></div>
-<div class="hud">
-  <div class="top">
-    <div>
-      <h1><b>Idle</b> Hands</h1>
-      <div class="season" id="season"></div>
-    </div>
-    <div class="obs">
-      <h2>Observations</h2>
-      <ol id="obs"></ol>
-      <div class="count" id="obscount"></div>
-      <div class="clicks" id="clicks">clicks: 0</div>
-    </div>
-  </div>
-  <div></div>
-  <div class="bottom">
-    <div class="left">
-      <div class="still" id="still">0:00<small>still</small></div>
-      <div class="typed" id="typed"></div>
-    </div>
-    <div class="how" id="how"><b>Don't click.</b> Rest the cursor somewhere and wait. Type a word. Scroll, or press ← →, to turn the season. Or leave, and come back later.</div>
-  </div>
-</div>
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<h1 class="title fade" id="title"><b>Idle</b> Hands</h1>
+<div class="typed" id="typed"></div>
+<div class="word" id="word" role="status" aria-live="polite"></div>
+<div class="hint fade" id="hint">rest · type · scroll · leave <span id="sound">&nbsp; any key for sound</span></div>
+<div class="dots" id="dots" aria-hidden="true"></div>
 <div class="placard" id="placard"></div>
-<div class="fallback" id="fallback" hidden>This surface needs WebGL 2 with float render targets, which this browser isn't offering.</div>
+<div class="fallback" id="fallback" hidden>This needs WebGL 2 with float render targets, which this browser isn't offering.</div>
 
 <script>
 (() => {
@@ -101,42 +58,23 @@ h1 b { font-weight: 900; }
 const $ = id => document.getElementById(id);
 const canvas = $('c');
 const gl = canvas.getContext('webgl2', { antialias: false, alpha: false, premultipliedAlpha: false });
-if (!gl || !(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'))) { $('fallback').hidden = false; return; }
+if (!gl || !(gl.getExtension('EXT_color_buffer_float') || gl.getExtension('EXT_color_buffer_half_float'))) { $('fallback').hidden = false; document.body.style.cursor = 'default'; return; }
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const STEPS = REDUCED ? 5 : 12;
 
-// Gray–Scott feed (f) and kill (k) rates. Each season is a region of the f/k map.
+// Each season: a Gray–Scott feed/kill pair, a metal (normal-incidence reflectance), and a chord for the drone.
 const SEASONS = [
-  { name: 'Coral',    f: .0545, k: .0620, pal: ['#081820', '#1d6a74', '#f0b9a2', '#fff1e4'] },
-  { name: 'Mitosis',  f: .0367, k: .0649, pal: ['#100d1b', '#56398a', '#ebe3f7', '#ffffff'] },
-  { name: 'Labyrinth', f: .0420, k: .0590, pal: ['#14110c', '#6a5838', '#ebdfc4', '#fffaf0'] },
-  { name: 'Lichen',   f: .0300, k: .0620, pal: ['#0c130f', '#3c6a38', '#d9e27c', '#fdfbd4'] },
-  { name: 'Worms',    f: .0780, k: .0610, pal: ['#190e0c', '#7a2d21', '#f1a45c', '#ffe4bc'] },
-  { name: 'Bubbles',  f: .0980, k: .0555, pal: ['#0b1120', '#294c8e', '#cbd9ff', '#ffffff'] },
-  { name: 'Graphite', f: .0260, k: .0510, pal: ['#0f0f13', '#4a4a55', '#d8d4cc', '#ffffff'] },
+  { name: 'Mercury',     f: .0545, k: .0620, tint: [.80, .82, .85], irid: 0,   chord: [73.42, 110, 164.81, 185] },
+  { name: 'Gold',        f: .0367, k: .0649, tint: [1.0, .76, .33], irid: 0,   chord: [87.31, 130.81, 196, 220] },
+  { name: 'Copper',      f: .0420, k: .0590, tint: [.95, .62, .52], irid: 0,   chord: [65.41, 98, 146.83, 155.56] },
+  { name: 'Blued steel', f: .0300, k: .0620, tint: [.42, .54, .78], irid: .25, chord: [82.41, 123.47, 185, 196] },
+  { name: 'Bronze',      f: .0780, k: .0610, tint: [.82, .60, .36], irid: 0,   chord: [98, 146.83, 220, 246.94] },
+  { name: 'Rose gold',   f: .0980, k: .0555, tint: [.96, .70, .66], irid: 0,   chord: [110, 164.81, 246.94, 277.18] },
+  { name: 'Titanium',    f: .0260, k: .0510, tint: [.62, .60, .58], irid: .85, chord: [58.27, 87.31, 130.81, 146.83] },
 ];
-const GOLD = ['#130f09', '#8a6a2a', '#f3d98a', '#fff6d8'];
+const OBS = ['still10', 'still60', 'nothing', 'stir', 'word', 'away', 'over', 'year', 'boredom', 'life', 'art', 'beauty'];
 
-const OBS = [
-  { id: 'still10', name: 'Stillness', hint: 'Rest the cursor.' },
-  { id: 'still60', name: 'Patience', hint: 'Rest it longer.' },
-  { id: 'nothing', name: 'Nothing at all', hint: 'Do nothing for five minutes.' },
-  { id: 'stir', name: 'Stirring', hint: 'Disturb it.' },
-  { id: 'word', name: 'First word', hint: 'Say something.' },
-  { id: 'away', name: 'Absence', hint: 'Leave.' },
-  { id: 'over', name: 'Overgrowth', hint: 'Let it spread.' },
-  { id: 'year', name: 'A full year', hint: 'See every season.' },
-  { id: 'boredom', name: 'Boredom', hint: 'Name the feeling.' },
-  { id: 'life', name: 'Life', hint: 'Name what it is doing.' },
-  { id: 'art', name: 'Art', hint: 'Name what it is.' },
-  { id: 'beauty', name: 'Beauty', hint: 'Name what you want from it.' },
-];
-const CLICK_LINES = [
-  'You clicked. It noticed.', 'Again. Nothing happens when you click.', 'Clicking is a kind of impatience.',
-  'Your hands want something to do.', 'It is still not a button.', 'All right. Keep count, then.',
-];
-
-// ---------- GL plumbing ----------
+// ---------- GL ----------
 const VS = `#version 300 es
 in vec2 p; void main(){ gl_Position = vec4(p, 0., 1.); }`;
 const NOISE = `
@@ -149,11 +87,20 @@ precision highp float; out vec4 o; void main(){ o = vec4(1., 0., 0., 1.); }`;
 const FS_SIM = `#version 300 es
 precision highp float;
 uniform sampler2D S; uniform sampler2D T; uniform vec2 R; uniform vec4 FK; uniform float MIX; uniform float TIME;
-uniform vec4 BR; uniform vec2 BM; uniform float STAMP;
+uniform vec4 BR; uniform vec2 BM; uniform float STAMP; uniform float FLOW; uniform vec3 DRAG; uniform vec2 DRAGV;
 out vec4 o;
 ${NOISE}
 void main(){
-  vec2 px = 1./R, uv = gl_FragCoord.xy*px;
+  vec2 px = 1./R;
+  // a slow current: the curl of drifting noise, plus whatever the cursor drags along
+  vec2 fq = gl_FragCoord.xy/220. + vec2(TIME*.011, TIME*.007);
+  float eps = .02;
+  float pY = fbm(fq + vec2(0., eps)) - fbm(fq - vec2(0., eps));
+  float pX = fbm(fq + vec2(eps, 0.)) - fbm(fq - vec2(eps, 0.));
+  vec2 vel = vec2(pY, -pX)/(2.*eps) * FLOW;
+  float dd = length(gl_FragCoord.xy - DRAG.xy);
+  vel += DRAGV * exp(-dd*dd/(DRAG.z*DRAG.z));
+  vec2 uv = (gl_FragCoord.xy - vel)*px;
   vec2 c = texture(S, uv).xy;
   vec2 l = -c
     + .2*(texture(S, uv+vec2(px.x,0.)).xy + texture(S, uv-vec2(px.x,0.)).xy + texture(S, uv+vec2(0.,px.y)).xy + texture(S, uv-vec2(0.,px.y)).xy)
@@ -173,33 +120,61 @@ void main(){
   if (STAMP > .5) { float s = texture(T, uv).r; u = mix(u, .5, s); v = mix(v, .25, s); }
   o = vec4(clamp(u, 0., 1.), clamp(v, 0., 1.), 0., 1.);
 }`;
+// The surface: the chemical's concentration becomes a height field, shaded as polished metal
+// reflecting a slow, dark studio (a horizon ring, two turning softboxes) and a lamp that is the cursor.
 const FS_DRAW = `#version 300 es
 precision highp float;
-uniform sampler2D S; uniform vec2 R; uniform vec2 SR; uniform vec3 L; uniform vec3 C0, C1, C2, C3; uniform float TIME; uniform vec3 HALO; uniform float PRESENT;
+uniform sampler2D S; uniform vec2 R; uniform vec2 SR; uniform vec3 L; uniform float TIME; uniform float LAMP;
+uniform vec3 TINT; uniform float IRID; uniform vec3 HALO; uniform float DIM;
 out vec4 o;
 ${NOISE}
+float H(vec2 uv){ return smoothstep(.07, .34, texture(S, uv).y); }
+vec3 env(vec3 r, vec3 ld){
+  float t = TIME*.025;
+  float el = r.z;
+  float az = atan(r.y, r.x);
+  vec3 cool = vec3(.55, .68, 1.), warm = vec3(1., .80, .58);
+  vec3 c = mix(vec3(.05, .055, .07), vec3(.17, .18, .21), smoothstep(1., .1, el));
+  c += vec3(.10, .10, .11) * (.5 + .5*sin(az*3. - t*1.5)) * smoothstep(.95, .4, el);
+  float ring = exp(-pow((el - .2)/.14, 2.));
+  c += mix(cool, warm, .5 + .5*sin(az*2. + t*2.)) * ring * 1.25;
+  c += warm * exp(-pow((el + .1)/.2, 2.)) * .12;
+  vec2 a1 = vec2(cos(t), sin(t)), a2 = vec2(cos(-t*1.3 + 2.1), sin(-t*1.3 + 2.1));
+  c += vec3(1.) * exp(-pow(dot(r.xy, a1)/.11, 2.)) * smoothstep(.2, .55, el) * smoothstep(.995, .85, el) * 1.8;
+  c += cool * exp(-pow(dot(r.xy, a2)/.06, 2.)) * smoothstep(.25, .5, el) * smoothstep(.99, .8, el) * 1.1;
+  float lp = max(dot(r, ld), 0.);
+  c += warm * (pow(lp, 90.)*5. + pow(lp, 6.)*.55) * LAMP;
+  return c;
+}
 void main(){
   vec2 uv = gl_FragCoord.xy/R, e = 1./SR;
-  float v = texture(S, uv).y;
-  float vx = texture(S, uv+vec2(e.x,0.)).y - texture(S, uv-vec2(e.x,0.)).y;
-  float vy = texture(S, uv+vec2(0.,e.y)).y - texture(S, uv-vec2(0.,e.y)).y;
-  vec3 N = normalize(vec3(-vx*5., -vy*5., 1.));
-  vec3 P = vec3(gl_FragCoord.xy, v*60.);
-  vec3 Ld = normalize(L - P);
-  float dif = max(dot(N, Ld), 0.);
-  vec3 H = normalize(Ld + vec3(0., 0., 1.));
-  float sp = pow(max(dot(N, H), 0.), 70.);
-  float t1 = smoothstep(.06, .2, v), t2 = smoothstep(.2, .36, v);
-  vec3 base = mix(C0, mix(C1, C2, t2), t1);
-  float dist = length(gl_FragCoord.xy - L.xy)/max(R.x, R.y);
-  float pool = mix(.55, exp(-dist*dist*5.), PRESENT);
-  vec3 col = base*(.22 + .95*dif*(.4 + .6*pool)) + C3*sp*t1*(.25 + .95*pool)*.75;
-  col += C1*.07*pool*(1.-t1);
-  float vig = smoothstep(1.25, .25, length(uv - .5)*1.35);
-  col *= mix(.62, 1., vig);
-  col += (h(gl_FragCoord.xy + fract(TIME)*100.) - .5)*.02;
-  if (HALO.z > 0.) { float d = abs(length(gl_FragCoord.xy - HALO.xy) - HALO.z); col += C3*.22*smoothstep(1.6, 0., d); }
-  o = vec4(col, 1.);
+  float hc = H(uv);
+  vec2 g1 = vec2(H(uv+vec2(e.x,0.)) - H(uv-vec2(e.x,0.)), H(uv+vec2(0.,e.y)) - H(uv-vec2(0.,e.y)));
+  vec2 g2 = vec2(H(uv+vec2(2.*e.x,0.)) - H(uv-vec2(2.*e.x,0.)), H(uv+vec2(0.,2.*e.y)) - H(uv-vec2(0.,2.*e.y)));
+  vec2 g = g1*.6 + g2*.4;
+  vec3 N = normalize(vec3(-g*2.4, 1.));
+  vec3 V = vec3(0., 0., 1.);
+  vec3 r = reflect(-V, N);
+  vec3 P = vec3(gl_FragCoord.xy, hc*50.);
+  vec3 ld = normalize(L - P);
+  float wide = (H(uv+vec2(6.*e.x,0.)) + H(uv-vec2(6.*e.x,0.)) + H(uv+vec2(0.,6.*e.y)) + H(uv-vec2(0.,6.*e.y)))*.25;
+  float ao = 1. - .45*smoothstep(0., .45, wide - hc);
+  float ndv = max(N.z, 0.);
+  vec3 F = TINT + (1. - TINT)*pow(1. - ndv, 5.);
+  float th = hc*1.6 + length(g)*1.4 + TIME*.015;
+  vec3 film = .55 + .55*cos(6.2831*(th + vec3(0., .33, .67)));
+  F = mix(F, F*film*1.5, IRID * smoothstep(.02, .3, hc));
+  vec3 col = env(r, ld) * F * ao;
+  vec3 hv = normalize(ld + V);
+  float nh = max(dot(N, hv), 0.);
+  col += vec3(1., .9, .78) * (pow(nh, 600.)*5. + pow(nh, 60.)*.35) * mix(TINT, vec3(1.), .5) * LAMP * smoothstep(.0, .25, length(g));
+  col *= DIM * 1.35;
+  col = (col*(2.51*col + .03))/(col*(2.43*col + .59) + .14);
+  float vig = smoothstep(1.3, .25, length(uv - .5)*1.4);
+  col *= mix(.45, 1., vig);
+  col += (h(gl_FragCoord.xy + fract(TIME)*100.) - .5)*.014;
+  if (HALO.z > 0.) { float d = abs(length(gl_FragCoord.xy - HALO.xy) - HALO.z); col += vec3(1., .88, .7)*.12*smoothstep(1.5, 0., d); }
+  o = vec4(pow(max(col, 0.), vec3(.95)), 1.);
 }`;
 const FS_REDUCE = `#version 300 es
 precision highp float; uniform sampler2D S; uniform vec2 R; out vec4 o;
@@ -221,7 +196,7 @@ function program(fs) {
 }
 const P = { init: program(FS_INIT), sim: program(FS_SIM), draw: program(FS_DRAW), reduce: program(FS_REDUCE) };
 const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
-const vb = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, vb);
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
 gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
 gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
@@ -248,24 +223,22 @@ function allocSim(w, h) {
   if (stampTex) gl.deleteTexture(stampTex);
   stampTex = tex(w, h, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR, gl.CLAMP_TO_EDGE);
   stampCanvas.width = w; stampCanvas.height = h;
-  gl.bindFramebuffer(gl.FRAMEBUFFER, A.f); gl.viewport(0, 0, w, h); gl.useProgram(P.init.p); gl.drawArrays(gl.TRIANGLES, 0, 3);
+  wipe();
 }
+function wipe() { gl.bindFramebuffer(gl.FRAMEBUFFER, A.f); gl.viewport(0, 0, SW, SH); gl.useProgram(P.init.p); gl.drawArrays(gl.TRIANGLES, 0, 3); }
 
 // ---------- state ----------
 let season = 0, prevSeason = 0, seasonT = 1, seasonClock = 0, seasonsSeen = new Set([0]);
-let palette = SEASONS[0].pal.map(hex), goldUntil = 0;
-let pointer = { x: 0, y: 0, in: false, moved: 0, lastX: 0, lastY: 0 };
-let still = 0, stirTime = 0, pulseClock = 0, pulseN = 0, lastInput = performance.now(), everInput = false;
-let typed = '', typedAt = 0, catchUp = 0, freezeUntil = 0, hiddenAt = 0, clicks = 0, coverage = 0;
-let pendingStamp = false, time = 0, wheelAcc = 0, wheelAt = 0, artN = 0;
+let tint = SEASONS[0].tint.slice(), irid = 0, dim = 1;
+let pointer = { x: 0, y: 0, in: false, moved: 0, dx: 0, dy: 0 };
+let dragVX = 0, dragVY = 0;
+let still = 0, stirTime = 0, pulseClock = 0, pulseN = 0, lastInput = performance.now();
+let typed = '', typedAt = 0, catchUp = 0, freezeUntil = 0, hiddenAt = 0, coverage = 0, speedNow = 0;
+let pendingStamp = false, time = 0, wheelAcc = 0, wheelAt = 0, artN = 0, goldUntil = 0;
 let earned = {};
 try { earned = JSON.parse(localStorage.getItem('idle-hands-obs') || '{}') || {}; } catch { earned = {}; }
-try { clicks = +localStorage.getItem('idle-hands-clicks') || 0; } catch {}
 
-function hex(s) { return [1, 3, 5].map(k => parseInt(s.slice(k, k + 2), 16) / 255); }
-function lerp3(a, b, t) { return a.map((v, i) => v + (b[i] - v) * t); }
-
-// ---------- stamping (words and seeds are drawn to a 2D canvas, then fed into the medium) ----------
+// ---------- stamping ----------
 function stamp(fn) {
   sctx.setTransform(1, 0, 0, 1, 0, 0); sctx.clearRect(0, 0, SW, SH);
   sctx.fillStyle = '#fff'; sctx.strokeStyle = '#fff';
@@ -279,9 +252,10 @@ function stamp(fn) {
 function stampWord(word, cx, cy, big) {
   stamp(c => {
     let size = SH * (big ? .3 : .2 + Math.random() * .1);
-    c.font = `italic 900 ${size}px "Bodoni Moda", Didot, Georgia, serif`;
+    const font = s => `italic 900 ${s}px "Bodoni Moda", Didot, Georgia, serif`;
+    c.font = font(size);
     const w = c.measureText(word).width;
-    if (w > SW * .82) { size *= SW * .82 / w; c.font = `italic 900 ${size}px "Bodoni Moda", Didot, Georgia, serif`; }
+    if (w > SW * .82) { size *= SW * .82 / w; c.font = font(size); }
     c.translate(cx, cy); c.rotate((Math.random() - .5) * .22);
     c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineWidth = Math.max(1, size * .035);
     c.fillText(word, 0, 0); c.strokeText(word, 0, 0);
@@ -291,17 +265,18 @@ function stampDots(n) {
   stamp(c => { for (let i = 0; i < n; i++) { c.beginPath(); c.arc(Math.random() * SW, Math.random() * SH, 1.5 + Math.random() * 3, 0, 7); c.fill(); } });
 }
 
-// ---------- simulation passes ----------
-let brush = [0, 0, 0, 1], brushMode = [0, 0];
+// ---------- passes ----------
+let brush = [0, 0, 0, 1], brushMode = [0, 0], flow = .05, drag = [0, 0, 1, 0, 0];
 function simSteps(n) {
   const s = SEASONS[season], ps = SEASONS[prevSeason];
   gl.useProgram(P.sim.p); gl.viewport(0, 0, SW, SH);
   const u = P.sim.u;
   gl.uniform2f(u.R, SW, SH); gl.uniform4f(u.FK, ps.f, ps.k, s.f, s.k); gl.uniform1f(u.MIX, seasonT); gl.uniform1f(u.TIME, time);
   gl.uniform4f(u.BR, brush[0], brush[1], brush[2], brush[3]); gl.uniform1i(u.S, 0); gl.uniform1i(u.T, 1);
+  gl.uniform2f(u.BM, brushMode[0], brushMode[1]);
+  gl.uniform1f(u.FLOW, flow); gl.uniform3f(u.DRAG, drag[0], drag[1], drag[2]); gl.uniform2f(u.DRAGV, drag[3], drag[4]);
   gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, stampTex); gl.activeTexture(gl.TEXTURE0);
   for (let i = 0; i < n; i++) {
-    gl.uniform2f(u.BM, brushMode[0], brushMode[1]);
     gl.uniform1f(u.STAMP, pendingStamp ? 1 : 0);
     gl.bindFramebuffer(gl.FRAMEBUFFER, B.f); gl.bindTexture(gl.TEXTURE_2D, A.t);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -309,18 +284,17 @@ function simSteps(n) {
     pendingStamp = false;
   }
 }
+let lampX = 0, lampY = 0, lampOn = 0;
 function drawScreen(halo) {
   gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, canvas.width, canvas.height);
   gl.useProgram(P.draw.p); const u = P.draw.u;
   gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, A.t); gl.uniform1i(u.S, 0);
   gl.uniform2f(u.R, canvas.width, canvas.height); gl.uniform2f(u.SR, SW, SH);
-  const lx = pointer.in ? pointer.x * dpr : canvas.width * (.5 + .3 * Math.cos(time * .07));
-  const ly = pointer.in ? canvas.height - pointer.y * dpr : canvas.height * (.55 + .25 * Math.sin(time * .05));
-  gl.uniform3f(u.L, lx, ly, Math.max(canvas.width, canvas.height) * .3);
-  gl.uniform1f(u.PRESENT, pointer.in ? 1 : .6);
-  gl.uniform3fv(u.C0, palette[0]); gl.uniform3fv(u.C1, palette[1]); gl.uniform3fv(u.C2, palette[2]); gl.uniform3fv(u.C3, palette[3]);
+  gl.uniform3f(u.L, lampX, lampY, Math.max(canvas.width, canvas.height) * .28);
+  gl.uniform1f(u.LAMP, .35 + .65 * lampOn);
+  gl.uniform3fv(u.TINT, tint); gl.uniform1f(u.IRID, irid); gl.uniform1f(u.DIM, dim);
   gl.uniform1f(u.TIME, time);
-  gl.uniform3f(u.HALO, lx, ly, halo * dpr);
+  gl.uniform3f(u.HALO, lampX, lampY, halo * dpr);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 }
 function measure() {
@@ -332,80 +306,124 @@ function measure() {
   coverage = s / 255 / (RW * RH);
 }
 
-// ---------- sizing ----------
 function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 2);
   cw = innerWidth; ch = innerHeight;
   canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
   const scale = Math.min(.5, 900 / Math.max(cw, ch));
   const w = Math.max(64, Math.round(cw * scale)), h = Math.max(64, Math.round(ch * scale));
-  if (!SW || Math.abs(w - SW) / SW > .18 || Math.abs(h - SH) / SH > .18) { allocSim(w, h); seed(); }
-}
-function seed() {
-  stampDots(40); simSteps(1);
-  stampWord('idle hands', SW / 2, SH / 2, true); simSteps(1);
-  simSteps(REDUCED ? 400 : 900);
+  if (!SW || Math.abs(w - SW) / SW > .18 || Math.abs(h - SH) / SH > .18) {
+    allocSim(w, h);
+    stampDots(40); simSteps(1);
+    stampWord('idle hands', SW / 2, SH / 2, true); simSteps(1);
+    simSteps(REDUCED ? 400 : 900);
+  }
 }
 
-// ---------- observations & messages ----------
-function renderObs() {
-  $('obs').innerHTML = OBS.map(o => `<li class="${earned[o.id] ? 'got' : ''}">${earned[o.id] ? o.name : o.hint}</li>`).join('');
-  $('obscount').textContent = `${Object.keys(earned).filter(k => OBS.some(o => o.id === k)).length} of ${OBS.length} observed`;
-  $('clicks').textContent = `clicks: ${clicks}`;
+// ---------- sound: a drone tuned to the season, metal bells for what you do ----------
+let AC = null, S = {};
+function impulse(sec) {
+  const len = AC.sampleRate * sec, b = AC.createBuffer(2, len, AC.sampleRate);
+  for (let c = 0; c < 2; c++) { const d = b.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
+  return b;
 }
+function initAudio() {
+  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+  const C = window.AudioContext || window.webkitAudioContext; if (!C) return;
+  try { AC = new C(); } catch { return; }
+  const now = AC.currentTime;
+  S.master = AC.createGain(); S.master.gain.setValueAtTime(0, now); S.master.gain.linearRampToValueAtTime(.9, now + 6);
+  const comp = AC.createDynamicsCompressor(); S.master.connect(comp); comp.connect(AC.destination);
+  const verb = AC.createConvolver(); verb.buffer = impulse(5);
+  const wet = AC.createGain(); wet.gain.value = .6; verb.connect(wet); wet.connect(S.master);
+  const dry = AC.createGain(); dry.gain.value = .5; dry.connect(S.master);
+  S.bus = AC.createGain(); S.bus.connect(dry); S.bus.connect(verb);
+  S.filter = AC.createBiquadFilter(); S.filter.type = 'lowpass'; S.filter.frequency.value = 500; S.filter.Q.value = .8;
+  S.drone = AC.createGain(); S.drone.gain.value = .12; S.filter.connect(S.drone); S.drone.connect(S.bus);
+  S.voices = SEASONS[season].chord.map((f, i) => {
+    const g = AC.createGain(); g.gain.value = .22 / (1 + i * .35); g.connect(S.filter);
+    const oscs = [['sine', 1], ['triangle', 1.004], ['sine', 2.001]].map(([type, m]) => {
+      const o = AC.createOscillator(); o.type = type; o.frequency.value = f * m;
+      const og = AC.createGain(); og.gain.value = m === 2.001 ? .18 : .5; o.connect(og); og.connect(g); o.start(); return { o, m };
+    });
+    const lfo = AC.createOscillator(); lfo.frequency.value = .03 + Math.random() * .07;
+    const lg = AC.createGain(); lg.gain.value = .12 / (1 + i * .35); lfo.connect(lg); lg.connect(g.gain); lfo.start();
+    return oscs;
+  });
+  const nb = AC.createBuffer(1, AC.sampleRate * 2, AC.sampleRate), nd = nb.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+  const ns = AC.createBufferSource(); ns.buffer = nb; ns.loop = true;
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 1.2;
+  S.stir = AC.createGain(); S.stir.gain.value = 0; ns.connect(bp); bp.connect(S.stir); S.stir.connect(S.bus); ns.start();
+  S.stirBand = bp;
+  $('sound').classList.add('gone');
+}
+function retune() {
+  if (!AC) return;
+  const t = AC.currentTime;
+  SEASONS[season].chord.forEach((f, i) => S.voices[i].forEach(({ o, m }) => o.frequency.setTargetAtTime(f * m, t, 2.5)));
+}
+const PARTIALS = [[1, 1, 1], [2.0, .3, .55], [2.76, .45, .45], [5.4, .18, .22], [8.93, .08, .12]];
+function bell(freq, vel, pan) {
+  if (!AC || AC.state !== 'running') return;
+  const t = AC.currentTime, len = 5.5 * Math.pow(220 / freq, .35);
+  const out = AC.createStereoPanner ? AC.createStereoPanner() : AC.createGain();
+  if (out.pan) out.pan.value = pan ?? (Math.random() - .5) * .8;
+  out.connect(S.bus);
+  for (const [r, g, d] of PARTIALS) {
+    const o = AC.createOscillator(); o.type = 'sine'; o.frequency.value = freq * r * (1 + (Math.random() - .5) * .002);
+    const e = AC.createGain(); e.gain.setValueAtTime(0, t); e.gain.linearRampToValueAtTime(vel * g * .22, t + .006);
+    e.gain.exponentialRampToValueAtTime(.0001, t + len * d);
+    o.connect(e); e.connect(out); o.start(t); o.stop(t + len * d + .05);
+  }
+}
+const SCALE = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21];
+function note(i, oct = 2) { return SEASONS[season].chord[0] * Math.pow(2, oct + SCALE[((i % SCALE.length) + SCALE.length) % SCALE.length] / 12); }
+
+// ---------- quiet feedback ----------
 function earn(id) {
   if (earned[id]) return;
   earned[id] = Date.now();
   try { localStorage.setItem('idle-hands-obs', JSON.stringify(earned)); } catch {}
-  const o = OBS.find(o => o.id === id);
-  toast(o.name, 'Observed');
-  renderObs();
+  renderDots();
+  bell(note(7, 2), .5, 0); setTimeout(() => bell(note(9, 2), .35, 0), 380);
 }
-let toastTimer;
-function toast(text, kicker, ms = 4200) {
-  const t = $('toast'); t.innerHTML = `${text}${kicker ? `<small>${kicker}</small>` : ''}`; t.classList.add('show');
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms);
-}
-function fmt(sec) {
-  sec = Math.floor(sec); const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60;
-  return h ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}` : `${m}:${String(s).padStart(2, '0')}`;
+function renderDots() { $('dots').innerHTML = OBS.map(id => `<i class="${earned[id] ? 'on' : ''}"></i>`).join(''); }
+let wordTimer;
+function whisper(text, ms = 3400) {
+  const w = $('word'); w.textContent = text; w.classList.add('show');
+  clearTimeout(wordTimer); wordTimer = setTimeout(() => w.classList.remove('show'), ms);
 }
 function fmtLong(sec) {
-  sec = Math.round(sec); const m = Math.floor(sec / 60), s = sec % 60;
+  sec = Math.round(sec); const m = Math.floor(sec / 60);
   if (m >= 60) return `${Math.floor(m / 60)} h ${m % 60} min`;
-  return m ? `${m} min ${s} s` : `${s} seconds`;
+  return m ? `${m} min` : `${sec} s`;
 }
-function renderSeason() {
-  const s = SEASONS[season];
-  $('season').innerHTML = `Season ${roman(seasonsCount + 1)} · <em>${s.name}</em> · f ${s.f.toFixed(4)} k ${s.k.toFixed(4)} · ${Math.round(coverage * 100)}% grown`;
-}
-let seasonsCount = 0;
-function roman(n) { const r = [['M',1000],['CM',900],['D',500],['CD',400],['C',100],['XC',90],['L',50],['XL',40],['X',10],['IX',9],['V',5],['IV',4],['I',1]]; let o = ''; for (const [s, v] of r) while (n >= v) { o += s; n -= v; } return o; }
 
 function setSeason(i, quiet) {
   i = (i + SEASONS.length) % SEASONS.length;
   if (i === season) return;
-  prevSeason = season; season = i; seasonT = 0; seasonClock = 0; seasonsCount++;
+  prevSeason = season; season = i; seasonT = 0; seasonClock = 0;
   seasonsSeen.add(i); if (seasonsSeen.size === SEASONS.length) earn('year');
-  stampDots(12);
-  if (!quiet) toast(SEASONS[i].name, `Season ${roman(seasonsCount + 1)}`, 2600);
-  renderSeason();
+  stampDots(12); retune();
+  bell(SEASONS[i].chord[0] * 2, .45, 0);
+  if (!quiet) whisper(SEASONS[i].name, 2600);
 }
 
 // ---------- words ----------
 const SECRETS = {
-  boredom() { freezeUntil = performance.now() + 20000; toast('Everything stops.', 'Keep watching', 6000); earn('boredom'); },
-  life() { setSeason(1, true); toast('It divides.', 'Mitosis', 4000); earn('life'); },
+  boredom() { freezeUntil = performance.now() + 20000; earn('boredom'); },
+  life() { setSeason(1, true); earn('life'); },
   art() {
     artN++;
     const s = SEASONS[season];
-    $('placard').innerHTML = `<b>Idle Hands, No. ${artN}</b>Gray–Scott reaction–diffusion on screen, ${new Date().getFullYear()}.<br>${s.name}: feed ${s.f.toFixed(4)}, kill ${s.k.toFixed(4)}.<br>Attention: ${fmtLong(time)}.`;
+    $('placard').innerHTML = `<b>Idle Hands, No. ${artN}</b>${s.name.toLowerCase()} on reaction–diffusion, ${new Date().getFullYear()}<br>feed ${s.f.toFixed(4)} · kill ${s.k.toFixed(4)}<br>attention: ${fmtLong(time)}`;
     $('placard').classList.add('on'); $('frame').classList.add('on');
     setTimeout(() => { $('placard').classList.remove('on'); $('frame').classList.remove('on'); }, 30000);
     earn('art');
   },
-  beauty() { goldUntil = performance.now() + 90000; toast('Gold leaf, for a while.', 'Beauty', 4000); earn('beauty'); },
-  clear() { stamp(c => {}); gl.bindFramebuffer(gl.FRAMEBUFFER, A.f); gl.viewport(0, 0, SW, SH); gl.useProgram(P.init.p); gl.drawArrays(gl.TRIANGLES, 0, 3); toast('Wiped.', null, 2000); },
+  beauty() { goldUntil = performance.now() + 90000; earn('beauty'); },
+  clear() { wipe(); },
 };
 function commitWord() {
   const w = typed.trim(); typed = ''; renderTyped();
@@ -414,26 +432,23 @@ function commitWord() {
   const cx = pointer.in ? pointer.x / cw * SW : SW * (.25 + Math.random() * .5);
   const cy = pointer.in ? (1 - pointer.y / ch) * SH : SH * (.3 + Math.random() * .4);
   if (key !== 'clear') stampWord(w, cx, cy, false);
+  bell(note(0, 1), .6, 0);
   earn('word');
   if (SECRETS[key]) SECRETS[key]();
 }
 function renderTyped() { $('typed').textContent = typed; }
 
-// ---------- input: everything except clicks ----------
-function noteInput() { lastInput = performance.now(); everInput = true; }
+// ---------- input: everything but clicks ----------
+function noteInput() { lastInput = performance.now(); }
 addEventListener('pointermove', e => {
-  const dx = e.clientX - pointer.x, dy = e.clientY - pointer.y;
-  if (pointer.in) pointer.moved += Math.hypot(dx, dy);
+  if (pointer.in) { pointer.moved += Math.hypot(e.clientX - pointer.x, e.clientY - pointer.y); pointer.dx += e.clientX - pointer.x; pointer.dy += e.clientY - pointer.y; }
   pointer.x = e.clientX; pointer.y = e.clientY;
   if (!pointer.in) { pointer.in = true; try { window.focus(); } catch {} }
   noteInput();
 });
 document.documentElement.addEventListener('pointerleave', () => { pointer.in = false; still = 0; });
-addEventListener('blur', () => { /* keep pointer state; focus loss alone isn't absence */ });
 addEventListener('pointerdown', e => {
-  clicks++; try { localStorage.setItem('idle-hands-clicks', String(clicks)); } catch {}
-  toast(CLICK_LINES[Math.min(clicks - 1, CLICK_LINES.length - 1)], clicks > CLICK_LINES.length ? `${clicks} clicks` : null, 2600);
-  renderObs();
+  initAudio();
   if (e.pointerType !== 'mouse') { pointer.x = e.clientX; pointer.y = e.clientY; pointer.in = true; }
 });
 addEventListener('pointerup', e => { if (e.pointerType !== 'mouse') { pointer.in = false; still = 0; } });
@@ -445,16 +460,20 @@ addEventListener('wheel', e => {
   if (Math.abs(wheelAcc) > 160 && now - wheelAt > 1400) { setSeason(season + Math.sign(wheelAcc)); wheelAcc = 0; wheelAt = now; }
 }, { passive: false });
 addEventListener('keydown', e => {
-  noteInput();
+  noteInput(); initAudio();
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); setSeason(season + 1); return; }
   if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); setSeason(season - 1); return; }
   if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); commitWord(); return; }
   if (e.key === 'Backspace') { e.preventDefault(); typed = typed.slice(0, -1); renderTyped(); typedAt = performance.now(); return; }
-  if (e.key.length === 1 && typed.length < 24) { typed += e.key; typedAt = performance.now(); renderTyped(); }
+  if (e.key.length === 1 && typed.length < 24) {
+    typed += e.key; typedAt = performance.now(); renderTyped();
+    bell(note(e.key.toLowerCase().charCodeAt(0), 2), .28);
+  }
 });
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { hiddenAt = performance.now(); return; }
+  if (document.hidden) { hiddenAt = performance.now(); if (AC) AC.suspend(); return; }
+  if (AC) AC.resume();
   if (!hiddenAt) return;
   const away = (performance.now() - hiddenAt) / 1000; hiddenAt = 0;
   lastInput = performance.now();
@@ -462,69 +481,98 @@ document.addEventListener('visibilitychange', () => {
   catchUp += Math.min(away * 60 * STEPS * .25, 24000);
   const turns = Math.min(Math.floor(away / 90), SEASONS.length - 1);
   if (turns) setSeason(season + turns, true);
-  toast(`You were gone ${fmtLong(away)}. It kept going.`, turns ? `${SEASONS[season].name} now` : null, 5200);
+  whisper(`${fmtLong(away)} went by`, 4200);
   if (away >= 30) earn('away');
 });
 addEventListener('resize', resize);
 
 // ---------- loop ----------
-let last = performance.now(), measureAt = 0;
+let last = performance.now(), measureAt = 0, born = performance.now();
 function frame(now) {
   const dt = Math.min(.1, (now - last) / 1000); last = now; time += dt;
   const frozen = now < freezeUntil;
 
-  // seasons turn on their own, and palettes follow
-  if (!frozen) { seasonClock += dt; if (seasonClock > 85) setSeason(season + 1); }
+  if (!frozen) { seasonClock += dt; if (seasonClock > 90) setSeason(season + 1, true); }
   seasonT = Math.min(1, seasonT + dt / 9);
-  const target = now < goldUntil ? GOLD.map(hex) : lerp3Pal(SEASONS[prevSeason].pal, SEASONS[season].pal, seasonT);
-  palette = palette.map((c, i) => lerp3(c, target[i], Math.min(1, dt * 1.5)));
+  const s = SEASONS[season], ps = SEASONS[prevSeason];
+  const gold = now < goldUntil;
+  const tgtTint = gold ? [1, .8, .38] : ps.tint.map((v, i) => v + (s.tint[i] - v) * seasonT);
+  const tgtIrid = gold ? .45 : ps.irid + (s.irid - ps.irid) * seasonT;
+  const k = Math.min(1, dt * 1.2);
+  tint = tint.map((v, i) => v + (tgtTint[i] - v) * k); irid += (tgtIrid - irid) * k;
+  dim += ((frozen ? .35 : 1) - dim) * Math.min(1, dt * .8);
 
-  // the cursor: resting seeds, rushing erases
+  // the lamp follows the cursor, softly; without one it drifts
+  const tx = pointer.in ? pointer.x * dpr : canvas.width * (.5 + .32 * Math.cos(time * .06));
+  const ty = pointer.in ? canvas.height - pointer.y * dpr : canvas.height * (.55 + .28 * Math.sin(time * .045));
+  const lk = Math.min(1, dt * (pointer.in ? 10 : 1.5));
+  lampX += (tx - lampX) * lk; lampY += (ty - lampY) * lk;
+  lampOn += ((pointer.in ? 1 : 0) - lampOn) * Math.min(1, dt * 2);
+
+  // resting grows; rushing erases
   const speed = pointer.moved / Math.max(dt * 60, 1); pointer.moved = 0;
+  flow = frozen ? 0 : (REDUCED ? .02 : .035 + .03 * Math.sin(time * .021) + .015 * Math.sin(time * .0071 + 1));
+  const toSim = SW / cw, perStep = 1 / (STEPS * Math.max(dt * 60, 1));
+  dragVX += (pointer.dx * toSim * perStep * .9 - dragVX) * .5; dragVY += (-pointer.dy * toSim * perStep * .9 - dragVY) * .5;
+  pointer.dx = pointer.dy = 0;
+  const dm = Math.hypot(dragVX, dragVY), cap = 1.2;
+  if (dm > cap) { dragVX *= cap / dm; dragVY *= cap / dm; }
+  drag = [pointer.x * toSim, (1 - pointer.y / ch) * SH, 26, pointer.in ? dragVX : 0, pointer.in ? dragVY : 0];
+  speedNow += (speed - speedNow) * Math.min(1, dt * 8);
   brushMode = [0, 0];
   const bx = pointer.x / cw * SW, by = (1 - pointer.y / ch) * SH;
   if (pointer.in && speed < .6) {
     still += dt;
     if (still > 1.2) {
       pulseClock += dt;
-      if (pulseClock > 1.1) { pulseClock = 0; pulseN++; brush = [bx, by, 3 + (pulseN % 6) * 5, 1.6]; brushMode = [1, .09]; }
+      if (pulseClock > 1.1) {
+        pulseClock = 0; pulseN++;
+        brush = [bx, by, 3 + (pulseN % 6) * 5, 1.6]; brushMode = [1, .09];
+        bell(note(pulseN % 6, 1), .1 + Math.min(still, 60) / 600, (pointer.x / cw - .5) * 1.4);
+      }
     }
     if (still >= 10) earn('still10');
     if (still >= 60) earn('still60');
   } else {
     still = 0; pulseClock = 0;
-    if (pointer.in && speed > 28) {
+    if (pointer.in && speed > 70) {
       stirTime += dt; if (stirTime > 2) earn('stir');
       brush = [bx, by, Math.min(20 + speed * .8, 120) * SW / cw, 1]; brushMode = [2, .35];
     } else stirTime = Math.max(0, stirTime - dt);
   }
   if ((now - lastInput) / 1000 >= 300 && !document.hidden) earn('nothing');
-
   if (typed && now - typedAt > 2600) commitWord();
 
-  // run the medium
+  if (AC) {
+    const t = AC.currentTime;
+    S.stir.gain.setTargetAtTime(Math.min(speedNow / 90, 1) * .16, t, .08);
+    S.stirBand.frequency.setTargetAtTime(500 + Math.min(speedNow, 120) * 12, t, .1);
+    S.filter.frequency.setTargetAtTime(frozen ? 120 : 260 + coverage * 1500 + Math.min(still, 60) * 12, t, 1.2);
+    S.drone.gain.setTargetAtTime(frozen ? .0 : .12, t, frozen ? 1.5 : 3);
+  }
+
   if (!frozen) {
     let n = STEPS;
-    if (catchUp > 0) { const k = Math.min(catchUp, 180); n += k; catchUp -= k; }
+    if (catchUp > 0) { const c = Math.min(catchUp, 180); n += c; catchUp -= c; }
     simSteps(n);
   }
-  const halo = pointer.in && still > 1.2 ? 14 + Math.min(still, 120) * .9 : 0;
-  drawScreen(halo);
+  drawScreen(pointer.in && still > 1.2 ? 14 + Math.min(still, 120) * .9 : 0);
 
   if (now - measureAt > 900) {
     measureAt = now; measure();
     if (coverage > .45) earn('over');
     if (coverage < .03 && !frozen) stampDots(coverage < .005 ? 30 : 10);
-    renderSeason();
   }
-  $('still').innerHTML = `${fmt(pointer.in ? still : (now - lastInput) / 1000)}<small>${frozen ? 'frozen' : pointer.in ? 'still' : 'untouched'}</small>`;
+  const age = (now - born) / 1000;
+  $('title').classList.toggle('gone', age > 7);
+  $('hint').classList.toggle('gone', age > 14 && (now - lastInput) / 1000 < 120);
   requestAnimationFrame(frame);
 }
-function lerp3Pal(a, b, t) { return a.map((c, i) => lerp3(hex(c), hex(b[i]), t)); }
 
 async function start() {
   try { await Promise.race([document.fonts.load('italic 900 100px "Bodoni Moda"'), new Promise(r => setTimeout(r, 1500))]); } catch {}
-  resize(); renderObs(); renderSeason();
+  resize(); renderDots();
+  lampX = canvas.width * .82; lampY = canvas.height * .55;
   requestAnimationFrame(t => { last = t; frame(t); });
 }
 start();
