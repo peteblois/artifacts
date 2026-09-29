@@ -70,7 +70,7 @@ float meander(float y){ return G.x*.5 + sin(y*.017 + SEED)*G.x*.15 + sin(y*.043 
 float base(vec2 c){
   float valley = 3.5*exp(-pow((c.x - meander(c.y))/(G.x*.06), 2.));
   float banks = pow(abs(c.x/G.x - .5)*2., 2.)*5.;
-  return 6. + c.y*.11 + fbm(c*.018 + SEED)*5. + fbm(c*.07 + SEED*3.)*1.2 + banks - valley;
+  return 6. + c.y*.045 + fbm(c*.018 + SEED)*5. + fbm(c*.07 + SEED*3.)*1.2 + banks - valley;
 }`;
 const FS_INIT = `#version 300 es
 ${COMMON}
@@ -93,7 +93,9 @@ void main(){
   float hB = p.y > 0 ? H(p + ivec2(0, -1)) : hc - 1.5;
   float hT = p.y < g.y-1 ? H(p + ivec2(0, 1)) : 1e4;
   vec4 f = texelFetch(FL, p, 0);
-  vec4 nf = max(vec4(0.), f*.995 + DT*9.81*vec4(hc-hL, hc-hR, hc-hB, hc-hT));
+  // bed friction: thin sheets of water drag on the sand far more than deep channels do
+  float damp = mix(.86, .985, smoothstep(.02, .8, s.y));
+  vec4 nf = max(vec4(0.), f*damp + DT*9.81*vec4(hc-hL, hc-hR, hc-hB, hc-hT));
   float sum = nf.x + nf.y + nf.z + nf.w;
   if (sum > 0.) nf *= min(1., s.y/(sum*DT));
   o = nf;
@@ -117,12 +119,13 @@ void main(){
   float wx = (fl.y - f.x + f.y - fr.x)*.5;
   float wy = (fb.w - f.z + f.w - ft.z)*.5;
   vec2 v = vec2(wx, wy)/max((d0 + d)*.5, .03);
-  float sp = length(v); if (sp > 5.) v *= 5./sp;
+  float sp = length(v); if (sp > 3.) v *= 3./sp;
   vec2 gb = vec2(B(p + ivec2(1, 0)) - B(p + ivec2(-1, 0)), B(p + ivec2(0, 1)) - B(p + ivec2(0, -1)))*.5;
   float sl = length(gb), sinA = sl/sqrt(1. + sl*sl);
-  float C = KC*max(sinA, .08)*length(v)*clamp(d*10., 0., 1.)*(1. + 2.*sinA);
+  // stream power: deep, fast water carries far more than a thin sheet, so flow that gathers cuts deeper and gathers more
+  float C = KC*length(v)*min(d, 1.2)*(.4 + 3.*sinA);
   float b = s.x, sed = s.z;
-  if (C > sed) { float a = min(min(KS*(C - sed), .06), max(b, 0.)); b -= a; sed += a; }
+  if (C > sed) { float a = min(min(KS*(C - sed), .02), max(b, 0.)); b -= a; sed += a; }
   else { float a = KD*(sed - C); b += a; sed -= a; }
   d = max(0., d - DT*.0006);
   if (p.y == 0) sed *= .5;
@@ -151,7 +154,7 @@ void main(){
   vec2 v = texelFetch(VEL, p, 0).xy;
   float sed = bil(gl_FragCoord.xy - v*DT).z;
   float b = s.x;
-  float T = s.y > .01 ? mix(.4, .12, clamp(length(v)/2., 0., 1.)) : .75;
+  float T = s.y > .01 ? mix(.5, .28, clamp(length(v)/2., 0., 1.)) : .75;
   // slump toward all eight neighbours, diagonals at their true distance, so piles settle into round cones
   float acc = 0.;
   for (int k = 0; k < 8; k++) {
@@ -215,7 +218,7 @@ void main(){
     vec2 cq = c*.22 + N.xy*2.;
     float cz = pow(1. - abs(n2(cq + TIME*.18) - n2(cq*1.3 - TIME*.14 + 4.)), 7.);
     bed += vec3(1., .93, .78)*cz*.45*exp(-d*.7)*smoothstep(.0, .15, d);
-    float turb = clamp(s.z*5., 0., 1.);
+    float turb = clamp(s.z*1.6, 0., .8);
     vec3 T = exp(-d*mix(vec3(.5, .22, .17), vec3(.3, .38, .5), turb)*1.3);
     vec3 deep = mix(vec3(.05, .2, .22), vec3(.38, .28, .16), turb);
     vec3 wc = bed*T + deep*(1. - T);
@@ -310,7 +313,7 @@ function step(applyBrush) {
   // water + erosion
   gl.useProgram(P.water.p); u = P.water.u; common(u);
   gl.uniform1f(u.DT, DT); gl.uniform1f(u.Q, Q); gl.uniform1f(u.SRC, meander(GH - 1) + srcOff);
-  gl.uniform1f(u.KC, .9); gl.uniform1f(u.KS, .035); gl.uniform1f(u.KD, .02);
+  gl.uniform1f(u.KC, 1.2); gl.uniform1f(u.KS, .02); gl.uniform1f(u.KD, .006);
   bind(0, stA, u.ST); bind(1, flA, u.FL); run(P.water, fStB_vel, GW, GH);
   // sediment + slumping + hand
   gl.useProgram(P.sedi.p); u = P.sedi.u; common(u); gl.uniform1f(u.DT, DT);
@@ -341,7 +344,7 @@ function resize() {
   const w = Math.max(96, Math.round(cw * scale)), h = Math.max(96, Math.round(ch * scale));
   if (!GW || Math.abs(w - GW) / GW > .2 || Math.abs(h - GH) / GH > .2) { alloc(w, h); prewarm(); }
 }
-function prewarm() { for (let i = 0; i < (REDUCED ? 300 : 700); i++) step(false); }
+function prewarm() { for (let i = 0; i < (REDUCED ? 700 : 1600); i++) step(false); }
 
 // ---------- sound: a brook made of filtered noise; sand hisses when poured ----------
 let AC = null, SND = {};
@@ -428,7 +431,7 @@ function touched() { lastTouch = performance.now(); }
 let last = performance.now(), born = performance.now(), measureAt = 0;
 function frame(now) {
   const dt = Math.min(.05, (now - last) / 1000); last = now; time += dt;
-  srcOff = Math.sin(time * .03) * GW * .03 + Math.sin(time * .013 + 2) * GW * .02;
+  srcOff = Math.sin(time * .011) * GW * .006;
   const dig = hand.dig || (hand.down && shift);
   const pushing = hand.down && hand.push && !dig;
   brush = [hand.x, hand.y, Math.max(4, GW * .018), hand.down && !pushing ? (dig ? -.45 : .3) * dt * 60 : 0];
