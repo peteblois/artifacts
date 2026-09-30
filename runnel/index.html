@@ -82,6 +82,7 @@ const LINEAR_OK = !!gl.getExtension('OES_texture_float_linear');
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const STEPS = REDUCED ? 2 : 3;
 const DT = .08;
+const BEDSUB = 2;
 
 /* The model. One grid cell is one length unit; heights use the same unit.
    Water:  local-inertial shallow water (Bates et al. 2010) with Manning bed friction.
@@ -96,21 +97,23 @@ const DT = .08;
 const PRM = {
   g: 9.81,
   n: .12,          // Manning roughness
+  theta: .8,       // de Almeida weighting: below 1 blends each face with its neighbours to damp checkerboarding
   thc: .008,       // threshold of motion
   kq: 80,          // bedload coefficient
   beta: 1.1,       // slope deflection of moving sand
   helix: 20,       // strength of the spiral flow round bends (Engelund's A)
-  feed: .06,       // sand load the river brings out of the canyon
+  feed: 0,        // sand load the river brings out of the canyon
   slope: .05,      // fall of the table per cell
   morf: 12,        // morphological acceleration
-  perc: .0003,     // percolation into saturated sand
-  absorb: .05,     // how fast dry sand drinks
-  hold: .03,       // how much water dry sand holds before it is saturated
+  perc: .001,      // percolation into saturated sand
+  absorb: .12,     // how fast dry sand drinks
+  hold: .05,       // how much water dry sand holds before it is saturated
   reposeDry: .75,
   reposeWet: .5,
   reposeDamp: 1.3,
+  creep: .3,       // spreading of moving sand (smooths the bed at the scale of a cell)
 };
-let Q = 4;         // spring discharge, volume per time
+let Q = 12;        // spring discharge, volume per time
 
 // ---------- shaders ----------
 const VS = `#version 300 es
@@ -153,7 +156,7 @@ void main(){ vec2 c = gl_FragCoord.xy; float r = (canyon(c) >= .3 || c.y < 2.) ?
 // 1. Water momentum on faces. x = discharge through the right face, y = through the top face.
 const FS_FLUX = `#version 300 es
 ${COMMON}
-uniform sampler2D ST, FL; uniform float DT, GRAV, MANN;
+uniform sampler2D ST, FL; uniform float DT, GRAV, MANN, TH;
 layout(location=0) out vec4 o;
 float face(float q, vec2 a, vec2 b){
   float ea = a.x + a.y, eb = b.x + b.y;
@@ -171,7 +174,6 @@ void main(){
   ivec2 p = ivec2(gl_FragCoord.xy), g = ivec2(G), ex = ivec2(1, 0), ey = ivec2(0, 1);
   vec2 a = texelFetch(ST, p, 0).xy;
   // de Almeida et al. (2012): blend each face's discharge with its neighbours' to damp checkerboard oscillation
-  const float TH = .8;
   float fxo = TH*fx(p) + (1. - TH)*.5*(fx(p - ex) + fx(p + ex));
   float fyo = TH*fy(p) + (1. - TH)*.5*(fy(p - ey) + fy(p + ey));
   float qx = p.x < g.x - 1 ? face(fxo, a, texelFetch(ST, p + ex, 0).xy) : 0.;
@@ -231,52 +233,60 @@ void main(){
   o1 = vec4(u, max(th - THC, 0.), 0.);
 }`;
 
-// 2b. Sediment flux as a vector at each cell, along the actual flow, so channels aren't pinned to grid angles.
-//     Helical flow: round a bend the water spirals, sweeping bed sand toward the inside of the curve
-//     (Engelund: tan δ = A·h/r). Outer banks erode, point bars grow inside, and bends grow into meanders.
+// 2b. How far the flow is turning at each cell. Round a bend the water spirals, sweeping bed sand toward the inside
+//     of the curve (Engelund: tan δ = A·h/r). The bed pass turns each face's sediment by this angle.
 const FS_QS = `#version 300 es
 ${COMMON}
-uniform sampler2D ST, VEL; uniform float MANN, THC, KQ, BETA, HELIX, FEED;
+uniform sampler2D ST, VEL; uniform float HELIX;
 layout(location=0) out vec4 o;
 vec2 U(ivec2 q){ return texelFetch(VEL, clamp(q, ivec2(0), ivec2(G) - 1), 0).xy; }
-float Bh(ivec2 q){ return texelFetch(ST, clamp(q, ivec2(0), ivec2(G) - 1), 0).x; }
 void main(){
   ivec2 p = ivec2(gl_FragCoord.xy), ex = ivec2(1, 0), ey = ivec2(0, 1);
-  vec4 s = texelFetch(ST, p, 0);
-  vec2 u = U(p); float d = s.y, sp = length(u);
+  vec2 u = U(p); float d = texelFetch(ST, p, 0).y, sp = length(u);
   o = vec4(0.);
-  // The canyon delivers sand: water running over bare rock carries a steady load (the bed-pass clamp to the rock
-  // floor supplies it), which the river drops wherever it slows, above all on the inside of bends.
-  if (s.w > 0. && s.x - s.w < .02) {
-    // only at the mouth, where the rock floor meets sand, so the load has one source
-    bool mouth = texelFetch(ST, clamp(p - ey, ivec2(0), ivec2(G) - 1), 0).w == 0. || texelFetch(ST, clamp(p + ex, ivec2(0), ivec2(G) - 1), 0).w == 0. || texelFetch(ST, clamp(p - ex, ivec2(0), ivec2(G) - 1), 0).w == 0.;
-    if (mouth && d > .03 && sp > .05) o = vec4(FEED*u/sp*min(d*3., 1.), 0., 0.);
-    return;
-  }
-  if (d < .015 || sp < 1e-3) return;
-  float exs = MANN*MANN*sp*sp/pow(d, 1./3.) - THC;
-  if (exs <= 0.) return;
-  float mag = KQ*exs*sqrt(exs);
+  if (d < .015 || sp < .02) return;
   vec2 adv = u.x*(U(p + ex) - U(p - ex))*.5 + u.y*(U(p + ey) - U(p - ey))*.5;
   float kappa = (u.x*adv.y - u.y*adv.x)/(sp*sp*sp);
-  float dl = clamp(atan(HELIX*d*kappa), -.8, .8), c = cos(dl), sn = sin(dl);
-  vec2 dir = u/sp; dir = vec2(c*dir.x - sn*dir.y, sn*dir.x + c*dir.y);
-  vec2 gb = vec2(Bh(p + ex) - Bh(p - ex), Bh(p + ey) - Bh(p - ey))*.5;
-  vec2 q = mag*(dir - BETA*gb);
-  float l = length(q); if (l > .4) q *= .4/l;
-  o = vec4(q, 0., 0.);
+  o = vec4(clamp(atan(HELIX*d*kappa), -.8, .8), 0., 0., 0.);
 }`;
 
-// 3. The bed: sediment through each face (flux-split from the cell vectors), Exner update, avalanching, the hand, the fixed canyon.
+// 3. The bed. Sediment is computed on the same staggered faces as the water: the face's own discharge gives the normal
+//    velocity, the two cells give the tangential one, so the speed has no preferred direction and odd-even (checkerboard)
+//    patterns can't hide from it. The slope term uses the bed step straight across the face. Then Exner, avalanching
+//    and creep, the hand, and the rock floor.
 const FS_BED = `#version 300 es
 ${COMMON}
-uniform sampler2D ST, QS; uniform float DT, MORF, RDRY, RWET, RDAMP; uniform vec4 BR, PU;
+uniform sampler2D ST, QS, FL, VEL; uniform float DT, MORF, RDRY, RWET, RDAMP, CREEP, MANN, THC, KQ, BETA, FEED; uniform vec4 BR, PU;
 layout(location=0) out vec4 o;
 float B(ivec2 q){ q = clamp(q, ivec2(0), ivec2(G) - 1); return texelFetch(ST, q, 0).x; }
 float sandOn(vec4 c){ return c.x - c.w; }   // loose sand above the rock floor (the floor is 0 outside the canyon)
-vec2 Q(ivec2 q){ return (q.x < 0 || q.y < 0 || q.x >= int(G.x) || q.y >= int(G.y)) ? vec2(0.) : texelFetch(QS, q, 0).xy; }
-// flux splitting: what leaves a toward b plus what leaves b toward a
-float face(float a, float b){ return max(a, 0.) + min(b, 0.); }
+// sediment through the face between a and b (b = a + x or a + y); positive means toward b
+float sedFace(ivec2 a, ivec2 b, bool xd){
+  vec4 A = texelFetch(ST, a, 0), Bc = texelFetch(ST, b, 0);
+  float hf = max(A.x + A.y, Bc.x + Bc.y) - max(A.x, Bc.x);
+  if (hf < .015) return 0.;
+  vec2 fa = texelFetch(FL, a, 0).xy;
+  float un = (xd ? fa.x : fa.y)/hf;
+  vec2 ua = texelFetch(VEL, a, 0).xy, ub = texelFetch(VEL, b, 0).xy;
+  float ut = xd ? .5*(ua.y + ub.y) : .5*(ua.x + ub.x);
+  vec2 U = xd ? vec2(un, ut) : vec2(ut, un);
+  float sp = length(U);
+  if (sp < 1e-3) return 0.;
+  // the canyon's load: water leaving bare rock for sand carries sand with it
+  bool aRock = A.w > 0. && sandOn(A) < .02, bRock = Bc.w > 0. && sandOn(Bc) < .02;
+  if (aRock && Bc.w == 0. && un > 0.) return FEED*un/sp*min(hf*3., 1.);
+  if (bRock && A.w == 0. && un < 0.) return FEED*un/sp*min(hf*3., 1.);
+  float exs = MANN*MANN*sp*sp/pow(hf, 1./3.) - THC;
+  if (exs <= 0.) return 0.;
+  float dl = .5*(texelFetch(QS, a, 0).x + texelFetch(QS, b, 0).x), c = cos(dl), sn = sin(dl);
+  vec2 dir = U/sp; dir = vec2(c*dir.x - sn*dir.y, sn*dir.x + c*dir.y);
+  float qn = KQ*exs*sqrt(exs)*((xd ? dir.x : dir.y) - BETA*(Bc.x - A.x));
+  // Sand budget: in one step a cell may give at most 10% of its loose sand through each of its 4 faces and 7% to each
+  // of its 8 avalanche neighbours (96% in all), so it can never give more than it holds.
+  float avail = max(sandOn(qn > 0. ? A : Bc), 0.)*.1/(MORF*DT);
+  return clamp(qn, -min(.4, avail), min(.4, avail));
+}
+float mob(vec4 v){ return v.z*sqrt(v.z); }   // how much sand is moving here (VEL.z holds the excess shear)
 vec2 qp(ivec2 q){
   float r = BR.z*1.4;
   float w = 1. - smoothstep(r*.5, r, length(vec2(q) + .5 - PU.xy));
@@ -286,15 +296,14 @@ vec2 qp(ivec2 q){
 void main(){
   ivec2 p = ivec2(gl_FragCoord.xy), g = ivec2(G), ex = ivec2(1, 0), ey = ivec2(0, 1);
   vec4 s = texelFetch(ST, p, 0);
-  vec2 qc = Q(p);
-  float qR = p.x < g.x - 1 ? face(qc.x, Q(p + ex).x) : 0.;
-  float qL = p.x > 0 ? face(Q(p - ex).x, qc.x) : 0.;
-  float qT = p.y < g.y - 1 ? face(qc.y, Q(p + ey).y) : 0.;
-  float qB = p.y > 0 ? face(Q(p - ey).y, qc.y) : min(qc.y, 0.);
+  float qR = p.x < g.x - 1 ? sedFace(p, p + ex, true) : 0.;
+  float qL = p.x > 0 ? sedFace(p - ex, p, true) : 0.;
+  float qT = p.y < g.y - 1 ? sedFace(p, p + ey, false) : 0.;
+  float qB = p.y > 0 ? sedFace(p - ey, p, false) : min(qT, 0.);
   float b = s.x - MORF*DT*(qR - qL + qT - qB);
-  // Avalanching. Each pair of cells agrees on one angle of repose (wet if either is under water) and on how much
-  // loose sand the higher one can give, so sand is only ever moved, never made. Bare rock gives nothing.
-  float acc = 0.;
+  // Avalanching and creep. Each pair of cells agrees on one angle of repose (wet if either is under water) and on how
+  // much loose sand the higher one can give, so sand is only ever moved, never made. Bare rock gives nothing.
+  float acc = 0., m0 = mob(texelFetch(VEL, p, 0));
   for (int k = 0; k < 8; k++) {
     ivec2 o = k == 0 ? ex : k == 1 ? -ex : k == 2 ? ey : k == 3 ? -ey : k == 4 ? ivec2(1, 1) : k == 5 ? ivec2(-1, -1) : k == 6 ? ivec2(1, -1) : ivec2(-1, 1);
     ivec2 q = p + o;
@@ -304,7 +313,10 @@ void main(){
     float T = (s.y > .01 || nb.y > .01) ? RWET : (min(s.z, nb.z) > .3 ? RDAMP : RDRY);
     float dist = k < 4 ? 1. : 1.41421, dl = nb.x - s.x;
     float t = .075*max(abs(dl) - T*dist, 0.)/(dist*dist);
-    t = min(t, .2*max(sandOn(dl > 0. ? nb : s), 0.));
+    // creep: where sand is moving it also spreads to all eight neighbours (isotropic 9-point weights)
+    float kp = min(.2, CREEP*KQ*.5*(m0 + mob(texelFetch(VEL, q, 0))) + ((s.y > .01 || nb.y > .01) ? .004 : 0.))*(k < 4 ? 2./3. : 1./6.);
+    t += kp*abs(dl);
+    t = min(t, .07*max(sandOn(dl > 0. ? nb : s), 0.));
     acc += sign(dl)*t;
   }
   b += acc;
@@ -433,13 +445,13 @@ function fbo(...ts) {
 }
 const F32 = () => tex(GW, GH, gl.RGBA32F, gl.RGBA, gl.FLOAT, LINEAR_OK ? gl.LINEAR : gl.NEAREST);
 
-let GW = 0, GH = 0, stA, stB, flA, flB, vel, qsTex, fQs, shTex, fStA, fStB_vel, fFlA, fFlB, fSh, seed = Math.random() * 100;
+let GW = 0, GH = 0, stA, stB, stC, fStC, flA, flB, vel, qsTex, fQs, shTex, fStA, fStB_vel, fFlA, fFlB, fSh, seed = Math.random() * 100;
 const RW = 32, RH = 20;
 const redTex = tex(RW, RH, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.NEAREST), redFbo = fbo(redTex), redBuf = new Uint8Array(RW * RH * 4);
 function alloc(w, h) {
-  for (const t of [stA, stB, flA, flB, vel, qsTex, shTex]) if (t) gl.deleteTexture(t);
+  for (const t of [stA, stB, stC, flA, flB, vel, qsTex, shTex]) if (t) gl.deleteTexture(t);
   GW = w; GH = h;
-  stA = F32(); stB = F32(); flA = F32(); flB = F32(); vel = F32(); qsTex = F32(); fQs = fbo(qsTex);
+  stA = F32(); stB = F32(); stC = F32(); fStC = fbo(stC); flA = F32(); flB = F32(); vel = F32(); qsTex = F32(); fQs = fbo(qsTex);
   shTex = tex(GW, GH, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, gl.LINEAR);
   fStA = fbo(stA); fStB_vel = fbo(stB, vel); fFlA = fbo(flA); fFlB = fbo(flB); fSh = fbo(shTex);
   reset(false);
@@ -465,7 +477,7 @@ function meander(y) { return GW * .5 + Math.sin(y * .012 + seed) * GW * .05 + Ma
 function step(applyBrush) {
   let u = P.flux.u;
   gl.useProgram(P.flux.p); common(u);
-  gl.uniform1f(u.DT, DT); gl.uniform1f(u.GRAV, PRM.g); gl.uniform1f(u.MANN, PRM.n);
+  gl.uniform1f(u.DT, DT); gl.uniform1f(u.GRAV, PRM.g); gl.uniform1f(u.MANN, PRM.n); gl.uniform1f(u.TH, PRM.theta);
   bind(0, stA, u.ST); bind(1, flA, u.FL); run(P.flux, fFlB, GW, GH);
   u = P.limit.u;
   gl.useProgram(P.limit.p); common(u); gl.uniform1f(u.DT, DT);
@@ -480,15 +492,19 @@ function step(applyBrush) {
 
   u = P.qs.u;
   gl.useProgram(P.qs.p); common(u);
-  gl.uniform1f(u.MANN, PRM.n); gl.uniform1f(u.THC, PRM.thc); gl.uniform1f(u.KQ, PRM.kq); gl.uniform1f(u.BETA, PRM.beta); gl.uniform1f(u.HELIX, PRM.helix); gl.uniform1f(u.FEED, PRM.feed);
+  gl.uniform1f(u.HELIX, PRM.helix);
   bind(0, stB, u.ST); bind(1, vel, u.VEL); run(P.qs, fQs, GW, GH);
 
   u = P.bed.u;
   gl.useProgram(P.bed.p); common(u);
-  gl.uniform1f(u.DT, DT); gl.uniform1f(u.MORF, PRM.morf); gl.uniform1f(u.RDRY, PRM.reposeDry); gl.uniform1f(u.RWET, PRM.reposeWet); gl.uniform1f(u.RDAMP, PRM.reposeDamp);
+  // The bed has its own stability limit (bed waves must not cross a cell per update), so it takes BEDSUB smaller steps.
+  gl.uniform1f(u.DT, DT); gl.uniform1f(u.MORF, PRM.morf / BEDSUB); gl.uniform1f(u.RDRY, PRM.reposeDry); gl.uniform1f(u.RWET, PRM.reposeWet); gl.uniform1f(u.RDAMP, PRM.reposeDamp); gl.uniform1f(u.CREEP, PRM.creep);
+  gl.uniform1f(u.MANN, PRM.n); gl.uniform1f(u.THC, PRM.thc); gl.uniform1f(u.KQ, PRM.kq); gl.uniform1f(u.BETA, PRM.beta); gl.uniform1f(u.FEED, PRM.feed);
   gl.uniform4f(u.BR, brush[0], brush[1], brush[2], applyBrush ? brush[3] : 0);
   gl.uniform4fv(u.PU, pushU);
-  bind(0, stB, u.ST); bind(1, qsTex, u.QS); run(P.bed, fStA, GW, GH);
+  bind(0, stB, u.ST); bind(1, qsTex, u.QS); bind(2, flA, u.FL); bind(3, vel, u.VEL); run(P.bed, fStC, GW, GH);
+  gl.uniform4f(u.BR, 0, 0, 1, 0); gl.uniform4f(u.PU, 0, 0, 0, 0);
+  bind(0, stC, u.ST); run(P.bed, fStA, GW, GH);
 }
 function draw() {
   gl.useProgram(P.shadow.p); common(P.shadow.u); bind(0, stA, P.shadow.u.ST); run(P.shadow, fSh, GW, GH);
@@ -575,7 +591,7 @@ canvas.addEventListener('pointermove', e => { [hand.x, hand.y] = toGrid(e); if (
 const up = () => { hand.down = false; };
 canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
 addEventListener('contextmenu', e => e.preventDefault());
-const QMIN = .8, QMAX = 18;
+const QMIN = 1.5, QMAX = 45;
 // The sluice wheel: two full turns run from a trickle to a flood (logarithmic, so every quarter-turn feels alike).
 const TURNS = 720, wheel = $('wheel');
 let turnTimer;
@@ -638,7 +654,8 @@ function frame(now) {
   const dig = hand.dig || (hand.down && shift);
   const pushing = hand.down && hand.push && !dig;
   const pouring = hand.down && hand.water && !dig;
-  if (!paused) pourU = [hand.x, hand.y, Math.max(3, GW * .012), pouring ? 6 : 0];
+  // a watering can, not a hose: spread wide enough that the water lands gently instead of scouring a pit
+  if (!paused) pourU = [hand.x, hand.y, Math.max(6, GW * .03), pouring ? 6 : 0];
   brush = [hand.x, hand.y, Math.max(4, GW * .018), hand.down && !pushing && !pouring ? (dig ? -.45 : .3) * dt * 60 : 0];
   let mx = hand.x - hand.px, my = hand.y - hand.py; hand.px = hand.x; hand.py = hand.y;
   const ml = Math.hypot(mx, my), cap = .9 * STEPS;
@@ -669,7 +686,7 @@ if (location.protocol === 'file:') {
     PRM, get size() { return [GW, GH]; }, setQ(v) { Q = v; }, pause(v) { paused = v; },
     reset(s) { seed = s; reset(false); },
     steps(n, withBrush) { for (let i = 0; i < n; i++) step(!!withBrush && i === 0); gl.finish(); },
-    pour(x, y, rate) { pourU = [x, y, Math.max(3, GW * .012), rate]; },
+    pour(x, y, rate) { pourU = [x, y, Math.max(6, GW * .03), rate]; },
     brushAt(x, y, amt) { brush = [x, y, Math.max(4, GW * .018), amt]; step(true); brush[3] = 0; },
     state() { return Array.from(readTex(fStA)); },
     vel() { return Array.from(readTex(fStB_vel, 1)); },
