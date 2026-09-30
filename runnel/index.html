@@ -33,12 +33,13 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; t
 @media (prefers-reduced-motion: reduce) { .fade { transition: none; } }
 </style>
 
-<canvas id="c" aria-label="A stream running through sand. Press and drag to pile sand and block it; alt-drag or press 2 to push sand; right-drag or hold Shift to dig."></canvas>
+<canvas id="c" aria-label="A stream running through sand. Press and drag to pile sand and block it; alt-drag or press 2 to push sand; right-drag or hold Shift to dig; press 4 to pour water."></canvas>
 <h1 class="title fade" id="title">Runnel</h1>
-<div class="hint fade" id="hint">drag to pile sand · alt-drag or 2 to push it · right-drag to dig · scroll for more water · R to smooth it over</div>
+<div class="hint fade" id="hint">drag to pile sand · 2 push · 3 dig · 4 pour water · scroll for more water · R to smooth it over</div>
 <div class="tools" role="group" aria-label="Tool">
   <button id="tPile" aria-pressed="true" aria-label="Pile sand" title="Pile sand (1)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 16 C6 16 7 7 10 7 C13 7 14 16 18 16 Z" fill="currentColor"/></svg></button>
   <button id="tPush" aria-pressed="false" aria-label="Push sand" title="Push sand (2)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 15 H11 C14 15 15 11 18 11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M13 5 L17 8 L13 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+  <button id="tWater" aria-pressed="false" aria-label="Pour water" title="Pour water (4)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 C10 2.5 4.5 9 4.5 12.5 A5.5 5.5 0 0 0 15.5 12.5 C15.5 9 10 2.5 10 2.5 Z" fill="currentColor"/></svg></button>
   <button id="tDig" aria-pressed="false" aria-label="Dig" title="Dig (3)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 6 C6 6 7 15 10 15 C13 15 14 6 18 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
 </div>
 <div class="meter fade gone" id="meter"><i id="meterFill"></i></div>
@@ -78,7 +79,7 @@ const PRM = {
   reposeDry: .75,
   reposeWet: .5,
 };
-let Q = 3;         // spring discharge, volume per time
+let Q = 4;         // spring discharge, volume per time
 
 // ---------- shaders ----------
 const VS = `#version 300 es
@@ -98,15 +99,18 @@ float rockMask(vec2 c){ return canyon(c)*smoothstep(halfw(c.y), halfw(c.y) + 2.5
 // Below the canyon: a plain tilted sand bed with gentle roughness. No pre-cut valley; the water finds its own way.
 float base(vec2 c){
   float cz = canyon(c);
-  float wall = smoothstep(halfw(c.y), halfw(c.y) + 3.5, abs(c.x - meander(c.y)))*(9. + fbm(c*.05 + SEED)*6.)*cz;
+  float side = smoothstep(halfw(c.y), halfw(c.y) + 3.5, abs(c.x - meander(c.y)));
+  float wall = side*(9. + fbm(c*.05 + SEED)*6.)*cz;
+  float cobbles = (1. - side)*cz*fbm(c*.45 + SEED*5.)*.55;
   float drop = cz*max(c.y - G.y*.8, 0.)*.1;
   float rim = pow(abs(c.x/G.x - .5)*2., 3.)*6.;
-  return 8. + c.y*.085 + fbm(c*.02 + SEED)*1.4 + fbm(c*.09 + SEED*3.)*.4 + rim + wall + drop;
+  return 8. + c.y*.085 + fbm(c*.02 + SEED)*1.4 + fbm(c*.09 + SEED*3.)*.4 + rim + wall + drop + cobbles;
 }`;
 const FS_INIT = `#version 300 es
 ${COMMON}
 layout(location=0) out vec4 o;
-void main(){ o = vec4(base(gl_FragCoord.xy), 0., 0., 0.); }`;
+// state: x = surface of the ground, y = water depth, z = wetness, w = rock floor (sand lies on top of it; nothing cuts below)
+void main(){ vec2 c = gl_FragCoord.xy; float r = canyon(c) >= .3 ? base(c) : 0.; o = vec4(base(c), 0., 0., r); }`;
 
 // 1. Water momentum on faces. x = discharge through the right face, y = through the top face.
 const FS_FLUX = `#version 300 es
@@ -131,7 +135,7 @@ void main(){
 // 2. Water mass: move it, feed the spring, spill off the bottom edge, soak into the sand. Also cell velocity.
 const FS_WATER = `#version 300 es
 ${COMMON}
-uniform sampler2D ST, FL; uniform float DT, GRAV, MANN, THC, QIN, SRC, SIG, PERC, ABSORB, HOLD;
+uniform sampler2D ST, FL; uniform float DT, GRAV, MANN, THC, QIN, SRC, SIG, PERC, ABSORB, HOLD; uniform vec4 WS;
 layout(location=0) out vec4 o0; layout(location=1) out vec4 o1;
 vec2 F(ivec2 q){ return (q.x < 0 || q.y < 0) ? vec2(0.) : texelFetch(FL, q, 0).xy; }
 void main(){
@@ -140,18 +144,20 @@ void main(){
   vec2 f = F(p), fl = F(p - ivec2(1, 0)), fb = F(p - ivec2(0, 1));
   float d = s.y + DT*(fl.x - f.x + fb.y - f.y);
   if (p.y == int(G.y) - 1) d += DT*QIN*exp(-pow((gl_FragCoord.x - SRC)/SIG, 2.))/(SIG*1.7725);
+  if (WS.w > 0.) { float dd = length(gl_FragCoord.xy - WS.xy); d += DT*WS.w*exp(-dd*dd/(WS.z*WS.z))/(3.1416*WS.z*WS.z); }
   if (p.y == 0) d -= DT*max(d, 0.)*sqrt(GRAV*max(d, 0.));
   // dry sand drinks until it holds its fill (HOLD of depth), then only slow percolation remains, faster under deeper water
   d = max(d, 0.);
-  float take = min(d, DT*ABSORB*(1. - s.z));
+  float soil = s.w > 0. ? smoothstep(0., .5, s.x - s.w) : 1.;   // bare rock drinks nothing
+  float take = min(d, DT*ABSORB*(1. - s.z)*soil);
   d -= take;
   float wet = s.z + take/HOLD;
-  d = max(d - DT*PERC*(1. + 4.*d)*step(1e-5, d), 0.);
+  d = max(d - DT*PERC*(1. + 4.*d)*step(1e-5, d)*soil, 0.);
   if (d <= 1e-5) wet -= DT*.004;
   wet = clamp(wet, 0., 1.);
   vec2 u = d > .004 ? vec2(fl.x + f.x, fb.y + f.y)*.5/max(d, .02) : vec2(0.);
   float th = d > .015 ? MANN*MANN*dot(u, u)/pow(d, 1./3.) : 0.;
-  o0 = vec4(s.x, d, wet, 0.);
+  o0 = vec4(s.x, d, wet, s.w);
   o1 = vec4(u, max(th - THC, 0.), 0.);
 }`;
 
@@ -161,22 +167,24 @@ ${COMMON}
 uniform sampler2D ST, FL; uniform float DT, MANN, THC, KQ, BETA, MORF, RDRY, RWET; uniform vec4 BR, PU;
 layout(location=0) out vec4 o;
 float B(ivec2 q){ q = clamp(q, ivec2(0), ivec2(G) - 1); return texelFetch(ST, q, 0).x; }
+float sandOn(vec4 c){ return c.x - c.w; }   // loose sand above the rock floor (the floor is 0 outside the canyon)
 float bedload(ivec2 a, ivec2 b, float q){
-  vec2 A = texelFetch(ST, a, 0).xy, Bc = texelFetch(ST, b, 0).xy;
+  vec4 A = texelFetch(ST, a, 0), Bc = texelFetch(ST, b, 0);
   float hf = max(A.x + A.y, Bc.x + Bc.y) - max(A.x, Bc.x);
   if (hf < .015) return 0.;
   float u = q/hf;
   float ex = MANN*MANN*u*u/pow(hf, 1./3.) - THC;
   if (ex <= 0.) return 0.;
   float qs = KQ*ex*sqrt(ex)*(sign(u) - BETA*(Bc.x - A.x));
-  // rock neither gives nor takes sand
-  if (canyon(vec2(a) + .5) > .3 || canyon(vec2(b) + .5) > .3) return 0.;
+  // only loose sand moves: none leaves a cell whose rock is bare
+  if (sandOn(qs > 0. ? A : Bc) < .02) return 0.;
   return clamp(qs, -.4, .4);
 }
 vec2 qp(ivec2 q){
   float r = BR.z*1.4;
   float w = 1. - smoothstep(r*.5, r, length(vec2(q) + .5 - PU.xy));
-  return PU.zw*w*min(B(q), 3.5);
+  vec4 c = texelFetch(ST, clamp(q, ivec2(0), ivec2(G) - 1), 0);
+  return PU.zw*w*clamp(sandOn(c), 0., 3.5);
 }
 void main(){
   ivec2 p = ivec2(gl_FragCoord.xy), g = ivec2(G), ex = ivec2(1, 0), ey = ivec2(0, 1);
@@ -187,24 +195,24 @@ void main(){
   float qT = p.y < g.y - 1 ? bedload(p, p + ey, f.y) : 0.;
   float qB = p.y > 0 ? bedload(p - ey, p, texelFetch(FL, p - ey, 0).y) : qT;
   float b = s.x - MORF*DT*(qR - qL + qT - qB);
-  float cz = canyon(gl_FragCoord.xy);
-  if (cz < .3) {
-    // each pair of cells agrees on one angle of repose (wet if either is under water), so sand is only ever moved, never made
-    float acc = 0.;
-    for (int k = 0; k < 8; k++) {
-      ivec2 o = k == 0 ? ex : k == 1 ? -ex : k == 2 ? ey : k == 3 ? -ey : k == 4 ? ivec2(1, 1) : k == 5 ? ivec2(-1, -1) : k == 6 ? ivec2(1, -1) : ivec2(-1, 1);
-      if (canyon(vec2(p + o) + .5) >= .3) continue;
-      vec2 nb = texelFetch(ST, clamp(p + o, ivec2(0), ivec2(G) - 1), 0).xy;
-      float T = (s.y > .01 || nb.y > .01) ? RWET : RDRY;
-      float dist = k < 4 ? 1. : 1.41421, dl = nb.x - s.x;
-      acc += sign(dl)*max(abs(dl) - T*dist, 0.)/(dist*dist);
-    }
-    b += .075*acc;
+  // Avalanching. Each pair of cells agrees on one angle of repose (wet if either is under water) and on how much
+  // loose sand the higher one can give, so sand is only ever moved, never made. Bare rock gives nothing.
+  float acc = 0.;
+  for (int k = 0; k < 8; k++) {
+    ivec2 o = k == 0 ? ex : k == 1 ? -ex : k == 2 ? ey : k == 3 ? -ey : k == 4 ? ivec2(1, 1) : k == 5 ? ivec2(-1, -1) : k == 6 ? ivec2(1, -1) : ivec2(-1, 1);
+    ivec2 q = p + o;
+    if (q.x < 0 || q.y < 0 || q.x >= g.x || q.y >= g.y) continue;
+    vec4 nb = texelFetch(ST, q, 0);
+    float T = (s.y > .01 || nb.y > .01) ? RWET : RDRY;
+    float dist = k < 4 ? 1. : 1.41421, dl = nb.x - s.x;
+    float t = .075*max(abs(dl) - T*dist, 0.)/(dist*dist);
+    t = min(t, .2*max(sandOn(dl > 0. ? nb : s), 0.));
+    acc += sign(dl)*t;
   }
+  b += acc;
   if (BR.w != 0.) { float dd = length(gl_FragCoord.xy - BR.xy); b += BR.w*exp(-dd*dd/(BR.z*BR.z)); }
   if (PU.z != 0. || PU.w != 0.) b -= (qp(p + ex).x - qp(p - ex).x + qp(p + ey).y - qp(p - ey).y)*.5;
-  if (cz >= .3) b = base(gl_FragCoord.xy);
-  o = vec4(max(b, 0.), s.y, s.z, 0.);
+  o = vec4(max(b, s.w), s.y, s.z, s.w);
 }`;
 
 // Cast shadows from a low sun, at grid resolution.
@@ -219,7 +227,7 @@ void main(){
   for (int i = 1; i <= 32; i++) {
     vec2 q = c + dir*float(i)*1.2;
     if (q.x < 0. || q.y < 0. || q.x > G.x || q.y > G.y) break;
-    sh = min(sh, clamp(1. - (Hs(q) - h0 - .62*float(i)*1.2)*.8, 0., 1.));
+    sh = min(sh, clamp(1. - (Hs(q) - h0 - 1.1*float(i)*1.2)*.8, 0., 1.));
   }
   o = vec4(sh, 0., 0., 1.);
 }`;
@@ -230,14 +238,14 @@ const FS_DRAW = `#version 300 es
 ${COMMON}
 uniform sampler2D ST, VEL, SH; uniform vec2 R; uniform float TIME;
 layout(location=0) out vec4 o;
-const vec3 SUN = vec3(-.653, .543, .53);
+const vec3 SUN = vec3(-.55, .46, .7);
 vec4 S(vec2 uv){ return texture(ST, uv); }
-vec3 sand(vec2 uv){
+vec3 sand(vec2 uv, float shk){
   vec2 e = 1./G, c = uv*G;
   vec2 g = vec2(S(uv + vec2(e.x, 0.)).x - S(uv - vec2(e.x, 0.)).x, S(uv + vec2(0., e.y)).x - S(uv - vec2(0., e.y)).x)*.5;
   g += vec2(.015, .045)*cos(c.y*1.1 + c.x*.25 + fbm(c*.12)*7.)*(.6 + .4*n2(c*.05));
   vec3 N = normalize(vec3(-g*1.7, 1.));
-  float dif = max(dot(N, SUN), 0.)*texture(SH, uv).r;
+  float dif = max(dot(N, SUN), 0.)*mix(1., texture(SH, uv).r, shk);
   vec4 s = S(uv);
   vec3 alb = mix(vec3(.8, .67, .49), vec3(.91, .81, .63), fbm(c*.045 + 3.));
   alb *= .93 + .14*h(floor(uv*R*.8));
@@ -245,15 +253,19 @@ vec3 sand(vec2 uv){
   float rk = rockMask(c);
   vec3 strata = mix(vec3(.52, .38, .29), vec3(.74, .6, .46), .5 + .5*sin(s.x*1.7 + fbm(c*.08)*3.));
   alb = mix(alb, strata*(.9 + .2*n2(c*.4)), rk);
+  // bare canyon floor: water-worn cobbles; sand piled on it shows as sand
+  float floorRock = step(.01, s.w)*(1. - rk)*(1. - smoothstep(.05, .4, s.x - s.w));
+  vec3 cob = mix(vec3(.36, .32, .28), vec3(.62, .55, .47), smoothstep(.3, .75, fbm(c*.9 + 4.)))*(.85 + .3*h(floor(c*2.)));
+  alb = mix(alb, cob, floorRock);
   alb = mix(alb, alb*vec3(.55, .48, .41), s.z*.85*(1. - rk*.7));
-  return alb*(.36 + .95*dif);
+  return alb*(.46 + .85*dif);
 }
 vec2 gradN(vec2 q){ float a = fbm(q), bx = fbm(q + vec2(.05, 0.)), by = fbm(q + vec2(0., .05)); return vec2(bx - a, by - a)/.05; }
 void main(){
   vec2 uv = gl_FragCoord.xy/R, e = 1./G, c = uv*G;
   vec4 s = S(uv);
   float d = s.y;
-  vec3 col = sand(uv);
+  vec3 col = sand(uv, 1.);
   if (d > .004) {
     vec4 l = S(uv - vec2(e.x, 0.)), r = S(uv + vec2(e.x, 0.)), b = S(uv - vec2(0., e.y)), t = S(uv + vec2(0., e.y));
     vec2 gh = vec2(r.x + r.y - l.x - l.y, t.x + t.y - b.x - b.y)*.5;
@@ -263,10 +275,10 @@ void main(){
     vec2 q1 = c*.32 - v*p1*1.4, q2 = c*.32 - v*p2*1.4 + 7.3;
     vec2 rip = mix(gradN(q1), gradN(q2), w)*(.04 + min(sp, 2.5)*.08);
     vec3 N = normalize(vec3(-(gh*1.4 + rip), 1.));
-    vec3 bed = sand(uv + N.xy*min(d, 3.)*.004);
+    vec3 bed = sand(uv + N.xy*min(d, 3.)*.004, .35);
     vec2 cq = c*.22 + N.xy*2.;
     float cz = pow(1. - abs(n2(cq + TIME*.18) - n2(cq*1.3 - TIME*.14 + 4.)), 7.);
-    bed += vec3(1., .93, .78)*cz*.4*exp(-d*.7)*smoothstep(.0, .15, d)*texture(SH, uv).r;
+    bed += vec3(1., .93, .78)*cz*.4*exp(-d*.7)*smoothstep(.0, .15, d)*mix(1., texture(SH, uv).r, .35);
     float mov = smoothstep(0., .02, vv.z)*(.55 + .45*fbm(q1*1.7 + 2.));
     vec3 T = exp(-d*vec3(.62, .26, .2)*1.4);
     vec3 wc = mix(bed, bed*vec3(1.05, .92, .75), mov*.6)*T + vec3(.05, .22, .24)*(1. - T);
@@ -345,8 +357,8 @@ function reset(newSeed) {
 
 // ---------- state ----------
 let srcOff = 0, time = 0, brush = [0, 0, 7, 0];
-const hand = { down: false, x: 0, y: 0, px: 0, py: 0, dig: false, push: false };
-let pushU = [0, 0, 0, 0];
+const hand = { down: false, x: 0, y: 0, px: 0, py: 0, dig: false, push: false, water: false };
+let pushU = [0, 0, 0, 0], pourU = [0, 0, 1, 0];
 let tool = 'pile', shift = false, flowLevel = 0, paused = false;
 
 function meander(y) { return GW * .5 + Math.sin(y * .012 + seed) * GW * .05 + Math.sin(y * .031 + seed * 2.3) * GW * .015; }
@@ -362,7 +374,7 @@ function step(applyBrush) {
   gl.useProgram(P.water.p); common(u);
   gl.uniform1f(u.DT, DT); gl.uniform1f(u.GRAV, PRM.g); gl.uniform1f(u.MANN, PRM.n); gl.uniform1f(u.THC, PRM.thc);
   gl.uniform1f(u.QIN, Q); gl.uniform1f(u.SRC, meander(GH - 1) + srcOff); gl.uniform1f(u.SIG, Math.max(2.5, GW * .008));
-  gl.uniform1f(u.PERC, PRM.perc); gl.uniform1f(u.ABSORB, PRM.absorb); gl.uniform1f(u.HOLD, PRM.hold);
+  gl.uniform1f(u.PERC, PRM.perc); gl.uniform1f(u.ABSORB, PRM.absorb); gl.uniform1f(u.HOLD, PRM.hold); gl.uniform4fv(u.WS, pourU);
   bind(0, stA, u.ST); bind(1, flA, u.FL); run(P.water, fStB_vel, GW, GH);
 
   u = P.bed.u;
@@ -427,7 +439,7 @@ function audioTick(dt) {
   const t = AC.currentTime, f = Math.min(1, flowLevel * 4);
   SND.brook.gain.setTargetAtTime(.05 + f * .5, t, .6);
   SND.rumble.gain.setTargetAtTime(.02 + f * .12, t, .8);
-  SND.hiss.gain.setTargetAtTime(hand.down ? (hand.push ? Math.min(.12, Math.hypot(pushU[2], pushU[3]) * .4) : hand.dig ? .05 : .09) : 0, t, .05);
+  SND.hiss.gain.setTargetAtTime(hand.down && !hand.water ? (hand.push ? Math.min(.12, Math.hypot(pushU[2], pushU[3]) * .4) : hand.dig ? .05 : .09) : 0, t, .05);
   for (const b of SND.bands) {
     b.phase += dt * (3 + Math.random() * 6);
     const babble = .5 + .5 * Math.sin(b.phase) * Math.sin(b.phase * .37 + 1);
@@ -438,16 +450,18 @@ function audioTick(dt) {
 
 // ---------- input ----------
 function toGrid(e) { return [e.clientX / cw * GW, (1 - e.clientY / ch) * GH]; }
-function setTool(t) { tool = t; for (const [id, n] of [['tPile', 'pile'], ['tPush', 'push'], ['tDig', 'dig']]) $(id).setAttribute('aria-pressed', String(t === n)); }
+function setTool(t) { tool = t; for (const [id, n] of [['tPile', 'pile'], ['tPush', 'push'], ['tDig', 'dig'], ['tWater', 'water']]) $(id).setAttribute('aria-pressed', String(t === n)); }
 $('tPile').onclick = () => setTool('pile');
 $('tDig').onclick = () => setTool('dig');
 $('tPush').onclick = () => setTool('push');
+$('tWater').onclick = () => setTool('water');
 canvas.addEventListener('pointerdown', e => {
   initAudio();
   canvas.setPointerCapture(e.pointerId);
   hand.down = true; [hand.x, hand.y] = toGrid(e);
   hand.dig = e.button === 2 || e.shiftKey || tool === 'dig';
   hand.push = !hand.dig && (e.button === 1 || e.altKey || tool === 'push');
+  hand.water = !hand.dig && !hand.push && tool === 'water';
   hand.px = hand.x; hand.py = hand.y;
   if (e.button === 1) e.preventDefault();
   touched();
@@ -473,6 +487,7 @@ addEventListener('keydown', e => {
   if (e.key === '1') setTool('pile');
   if (e.key === '2') setTool('push');
   if (e.key === '3') setTool('dig');
+  if (e.key === '4') setTool('water');
   if (e.key === 'r' || e.key === 'R') { reset(true); prewarm(); }
   if (e.key === 'ArrowUp') { Q = Math.min(QMAX, Q * 1.2); showMeter(); }
   if (e.key === 'ArrowDown') { Q = Math.max(QMIN, Q / 1.2); showMeter(); }
@@ -490,12 +505,14 @@ function frame(now) {
   srcOff = Math.sin(time * .011) * GW * .004;
   const dig = hand.dig || (hand.down && shift);
   const pushing = hand.down && hand.push && !dig;
-  brush = [hand.x, hand.y, Math.max(4, GW * .018), hand.down && !pushing ? (dig ? -.45 : .3) * dt * 60 : 0];
+  const pouring = hand.down && hand.water && !dig;
+  pourU = [hand.x, hand.y, Math.max(3, GW * .012), pouring ? 6 : 0];
+  brush = [hand.x, hand.y, Math.max(4, GW * .018), hand.down && !pushing && !pouring ? (dig ? -.45 : .3) * dt * 60 : 0];
   let mx = hand.x - hand.px, my = hand.y - hand.py; hand.px = hand.x; hand.py = hand.y;
   const ml = Math.hypot(mx, my), cap = .9 * STEPS;
   if (ml > cap) { mx *= cap / ml; my *= cap / ml; }
   pushU = pushing ? [hand.x, hand.y, mx / STEPS, my / STEPS] : [0, 0, 0, 0];
-  if (!paused) for (let i = 0; i < STEPS; i++) step(i === 0 && hand.down && !pushing);
+  if (!paused) for (let i = 0; i < STEPS; i++) step(i === 0 && hand.down && !pushing && !pouring);
   draw();
   if (now - measureAt > 400) { measureAt = now; measure(); }
   audioTick(dt);
