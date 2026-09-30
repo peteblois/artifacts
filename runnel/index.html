@@ -35,12 +35,24 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; t
 .fallback { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; font: italic 500 22px/1.4 var(--f-display); }
 .fallback[hidden] { display: none; }
 @media (max-width: 640px) { .hint { padding-inline: 70px 16px; text-align: right; letter-spacing: .06em; } }
+.tune { position: fixed; right: 12px; top: 12px; width: 260px; max-height: calc(100% - 24px); overflow-y: auto; background: rgba(250, 243, 230, .94); color: var(--ink); border-radius: 10px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(40, 25, 10, .3); font: 11px/1.4 var(--f-mono); z-index: 5; }
+.tune[hidden] { display: none; }
+.tune h2 { margin: 0 0 8px; font: italic 500 20px/1 var(--f-display); display: flex; justify-content: space-between; align-items: baseline; }
+.tune h2 span { font: 10px var(--f-mono); color: var(--ink-soft); }
+.tune label { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; margin: 0 0 8px; }
+.tune label b { font-weight: 400; }
+.tune label output { font-variant-numeric: tabular-nums; color: var(--ink-soft); }
+.tune input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: #2d6f78; margin: 0; }
+.tune .row { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
+.tune button { font: 11px var(--f-mono); padding: 6px 9px; border-radius: 6px; border: 1px solid rgba(43, 33, 24, .3); background: #fff8ec; color: var(--ink); cursor: pointer; }
+.tune textarea { width: 100%; height: 54px; margin-top: 6px; font: 10px var(--f-mono); resize: none; }
+.tune textarea[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { .fade { transition: none; } }
 </style>
 
 <canvas id="c" aria-label="A stream running through sand. Press and drag to pile sand and block it; alt-drag or press 2 to push sand; right-drag or hold Shift to dig; press 4 to pour water."></canvas>
 <h1 class="title fade" id="title">Runnel</h1>
-<div class="hint fade" id="hint">drag to pile sand · 2 push · 3 dig · 4 pour water · turn the wheel for more water · R to smooth it over</div>
+<div class="hint fade" id="hint">drag to pile sand · 2 push · 3 dig · 4 pour water · turn the wheel for more water · R new landscape · T tuning</div>
 <div class="tools" role="group" aria-label="Tool">
   <button id="tPile" aria-pressed="true" aria-label="Pile sand" title="Pile sand (1)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 16 C6 16 7 7 10 7 C13 7 14 16 18 16 Z" fill="currentColor"/></svg></button>
   <button id="tPush" aria-pressed="false" aria-label="Push sand" title="Push sand (2)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 15 H11 C14 15 15 11 18 11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M13 5 L17 8 L13 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -68,6 +80,12 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; t
     </g>
   </svg>
   <span class="gauge" id="gauge">flow</span>
+</div>
+<div class="tune" id="tune" hidden role="dialog" aria-label="Tuning">
+  <h2>Tuning <span>T to close</span></h2>
+  <div id="tuneList"></div>
+  <div class="row"><button id="tuneCopy">Copy settings</button><button id="tuneNew">New landscape</button><button id="tuneReset">Defaults</button></div>
+  <textarea id="tuneOut" hidden readonly aria-label="Settings to paste"></textarea>
 </div>
 <div class="fallback" id="fallback" hidden>This stream needs WebGL 2 with float render targets, which this browser isn't offering.</div>
 
@@ -647,6 +665,41 @@ addEventListener('resize', () => { resize(); placeWheel(); });
 document.addEventListener('visibilitychange', () => { if (!AC) return; document.hidden ? AC.suspend() : AC.resume(); });
 let lastTouch = performance.now();
 function touched() { lastTouch = performance.now(); }
+
+// ---------- tuning panel (T): live sliders so the feel can be found by hand ----------
+const TUNE = [
+  ['slope', 'Table slope (new landscape)', .02, .12, .002],
+  ['n', 'Water friction', .05, .25, .005],
+  ['thc', 'Sand stays put below', .002, .03, .001],
+  ['kq', 'Sand carried', 10, 200, 5],
+  ['morf', 'Carving speed', 2, 24, 1],
+  ['helix', 'Bend flow', 0, 40, 1],
+  ['beta', 'Sand rolls downhill', 0, 5, .1],
+  ['creep', 'Bed smoothing', 0, 1.5, .05],
+  ['perc', 'Seepage', 0, .005, .0001],
+  ['absorb', 'Dry sand drinks', 0, .4, .01],
+  ['reposeWet', 'Underwater slope', .2, 1.2, .05],
+  ['reposeDamp', 'Damp bank slope', .5, 2.5, .05],
+  ['reposeDry', 'Dry slope', .3, 1.5, .05],
+  ['feed', 'Sand from canyon', 0, .08, .005],
+];
+const DEFAULTS = { ...PRM };
+function buildTune() {
+  $('tuneList').innerHTML = TUNE.map(([k, name, lo, hi, st]) => `<label><b>${name}</b><output id="o_${k}">${PRM[k]}</output><input type="range" id="t_${k}" min="${lo}" max="${hi}" step="${st}" value="${PRM[k]}"></label>`).join('');
+  for (const [k] of TUNE) $('t_' + k).addEventListener('input', e => { PRM[k] = +e.target.value; $('o_' + k).textContent = PRM[k]; });
+}
+buildTune();
+$('tune').addEventListener('pointerdown', e => e.stopPropagation());
+$('tune').addEventListener('wheel', e => e.stopPropagation());
+$('tuneNew').onclick = () => { reset(true); prewarm(); placeWheel(); };
+$('tuneReset').onclick = () => { Object.assign(PRM, DEFAULTS); buildTune(); };
+$('tuneCopy').onclick = async () => {
+  const txt = JSON.stringify(Object.fromEntries(TUNE.map(([k]) => [k, PRM[k]]).concat([['flow', Math.round(Q / QDEF * 100) + '%']])));
+  const out = $('tuneOut'); out.value = txt; out.hidden = false; out.select();
+  try { await navigator.clipboard.writeText(txt); $('tuneCopy').textContent = 'Copied'; } catch { $('tuneCopy').textContent = 'Select and copy below'; }
+  setTimeout(() => { $('tuneCopy').textContent = 'Copy settings'; }, 2000);
+};
+addEventListener('keydown', e => { if ((e.key === 't' || e.key === 'T') && !e.target.closest?.('input, textarea')) $('tune').hidden = !$('tune').hidden; });
 
 // ---------- loop ----------
 let last = performance.now(), born = performance.now(), measureAt = 0;
