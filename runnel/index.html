@@ -72,8 +72,9 @@ const PRM = {
   n: .12,          // Manning roughness
   thc: .008,       // threshold of motion
   kq: 80,          // bedload coefficient
-  beta: 1.6,       // slope deflection of moving sand
-  helix: 14,       // strength of the spiral flow round bends (Engelund's A)
+  beta: 1.1,       // slope deflection of moving sand
+  helix: 20,       // strength of the spiral flow round bends (Engelund's A)
+  feed: .06,       // sand load the river brings out of the canyon
   slope: .05,      // fall of the table per cell
   morf: 12,        // morphological acceleration
   perc: .0003,     // percolation into saturated sand
@@ -209,7 +210,7 @@ void main(){
 //     (Engelund: tan δ = A·h/r). Outer banks erode, point bars grow inside, and bends grow into meanders.
 const FS_QS = `#version 300 es
 ${COMMON}
-uniform sampler2D ST, VEL; uniform float MANN, THC, KQ, BETA, HELIX;
+uniform sampler2D ST, VEL; uniform float MANN, THC, KQ, BETA, HELIX, FEED;
 layout(location=0) out vec4 o;
 vec2 U(ivec2 q){ return texelFetch(VEL, clamp(q, ivec2(0), ivec2(G) - 1), 0).xy; }
 float Bh(ivec2 q){ return texelFetch(ST, clamp(q, ivec2(0), ivec2(G) - 1), 0).x; }
@@ -218,7 +219,15 @@ void main(){
   vec4 s = texelFetch(ST, p, 0);
   vec2 u = U(p); float d = s.y, sp = length(u);
   o = vec4(0.);
-  if (d < .015 || sp < 1e-3 || s.x - s.w < .02) return;
+  // The canyon delivers sand: water running over bare rock carries a steady load (the bed-pass clamp to the rock
+  // floor supplies it), which the river drops wherever it slows, above all on the inside of bends.
+  if (s.w > 0. && s.x - s.w < .02) {
+    // only at the mouth, where the rock floor meets sand, so the load has one source
+    bool mouth = texelFetch(ST, clamp(p - ey, ivec2(0), ivec2(G) - 1), 0).w == 0. || texelFetch(ST, clamp(p + ex, ivec2(0), ivec2(G) - 1), 0).w == 0. || texelFetch(ST, clamp(p - ex, ivec2(0), ivec2(G) - 1), 0).w == 0.;
+    if (mouth && d > .03 && sp > .05) o = vec4(FEED*u/sp*min(d*3., 1.), 0., 0.);
+    return;
+  }
+  if (d < .015 || sp < 1e-3) return;
   float exs = MANN*MANN*sp*sp/pow(d, 1./3.) - THC;
   if (exs <= 0.) return;
   float mag = KQ*exs*sqrt(exs);
@@ -445,7 +454,7 @@ function step(applyBrush) {
 
   u = P.qs.u;
   gl.useProgram(P.qs.p); common(u);
-  gl.uniform1f(u.MANN, PRM.n); gl.uniform1f(u.THC, PRM.thc); gl.uniform1f(u.KQ, PRM.kq); gl.uniform1f(u.BETA, PRM.beta); gl.uniform1f(u.HELIX, PRM.helix);
+  gl.uniform1f(u.MANN, PRM.n); gl.uniform1f(u.THC, PRM.thc); gl.uniform1f(u.KQ, PRM.kq); gl.uniform1f(u.BETA, PRM.beta); gl.uniform1f(u.HELIX, PRM.helix); gl.uniform1f(u.FEED, PRM.feed);
   bind(0, stB, u.ST); bind(1, vel, u.VEL); run(P.qs, fQs, GW, GH);
 
   u = P.bed.u;
