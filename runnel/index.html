@@ -25,8 +25,13 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; t
 .tools button[aria-pressed="true"] { background: var(--chip-on); color: #f6eee0; }
 .tools button:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 .tools svg { width: 20px; height: 20px; }
-.meter { position: fixed; right: 18px; top: 50%; width: 3px; height: 140px; transform: translateY(-50%); background: rgba(43, 33, 24, .18); border-radius: 2px; pointer-events: none; }
-.meter i { position: absolute; left: 0; right: 0; bottom: 0; background: #2d6f78; border-radius: 2px; }
+.wheel { position: fixed; top: max(6px, env(safe-area-inset-top, 0px)); left: 50%; width: 76px; height: 76px; margin-left: -38px; cursor: grab; touch-action: none; border-radius: 50%; filter: drop-shadow(0 6px 6px rgba(40, 25, 10, .45)); }
+.wheel:active { cursor: grabbing; }
+.wheel:focus-visible { outline: 2px solid var(--ink); outline-offset: 4px; }
+.wheel svg { width: 100%; height: 100%; display: block; }
+.wheel .dial { transform-origin: 50% 50%; }
+.wheel .gauge { position: absolute; left: 50%; top: 100%; transform: translate(-50%, 4px); font: 10px/1 var(--f-mono); letter-spacing: .12em; color: #f4ecdd; background: rgba(43, 33, 24, .72); padding: 3px 7px; border-radius: 9px; white-space: nowrap; pointer-events: none; opacity: 0; transition: opacity .6s; }
+.wheel.turning .gauge, .wheel:focus-visible .gauge { opacity: 1; }
 .fallback { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; font: italic 500 22px/1.4 var(--f-display); }
 .fallback[hidden] { display: none; }
 @media (max-width: 640px) { .hint { padding-inline: 70px 16px; text-align: right; letter-spacing: .06em; } }
@@ -35,14 +40,35 @@ canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; t
 
 <canvas id="c" aria-label="A stream running through sand. Press and drag to pile sand and block it; alt-drag or press 2 to push sand; right-drag or hold Shift to dig; press 4 to pour water."></canvas>
 <h1 class="title fade" id="title">Runnel</h1>
-<div class="hint fade" id="hint">drag to pile sand · 2 push · 3 dig · 4 pour water · scroll for more water · R to smooth it over</div>
+<div class="hint fade" id="hint">drag to pile sand · 2 push · 3 dig · 4 pour water · turn the wheel for more water · R to smooth it over</div>
 <div class="tools" role="group" aria-label="Tool">
   <button id="tPile" aria-pressed="true" aria-label="Pile sand" title="Pile sand (1)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 16 C6 16 7 7 10 7 C13 7 14 16 18 16 Z" fill="currentColor"/></svg></button>
   <button id="tPush" aria-pressed="false" aria-label="Push sand" title="Push sand (2)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 15 H11 C14 15 15 11 18 11" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M13 5 L17 8 L13 11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
   <button id="tWater" aria-pressed="false" aria-label="Pour water" title="Pour water (4)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5 C10 2.5 4.5 9 4.5 12.5 A5.5 5.5 0 0 0 15.5 12.5 C15.5 9 10 2.5 10 2.5 Z" fill="currentColor"/></svg></button>
   <button id="tDig" aria-pressed="false" aria-label="Dig" title="Dig (3)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 6 C6 6 7 15 10 15 C13 15 14 6 18 6" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button>
 </div>
-<div class="meter fade gone" id="meter"><i id="meterFill"></i></div>
+<div class="wheel" id="wheel" role="slider" tabindex="0" aria-label="Water flow from the spring" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50" title="Turn to open or close the sluice">
+  <svg viewBox="0 0 80 80" aria-hidden="true">
+    <defs>
+      <radialGradient id="iron" cx="38%" cy="32%" r="75%"><stop offset="0" stop-color="#7a6f64"/><stop offset=".55" stop-color="#3f3833"/><stop offset="1" stop-color="#241f1b"/></radialGradient>
+      <linearGradient id="rust" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#9c6238"/><stop offset="1" stop-color="#5b3217"/></linearGradient>
+    </defs>
+    <circle cx="40" cy="40" r="15" fill="#2e2824" opacity=".55"/>
+    <g class="dial" id="dial">
+      <g stroke="url(#iron)" stroke-width="4.5" stroke-linecap="round">
+        <line x1="40" y1="40" x2="40" y2="9"/><line x1="40" y1="40" x2="69.5" y2="30.4"/><line x1="40" y1="40" x2="58.2" y2="65.1"/>
+        <line x1="40" y1="40" x2="21.8" y2="65.1"/><line x1="40" y1="40" x2="10.5" y2="30.4"/>
+      </g>
+      <circle cx="40" cy="40" r="31" fill="none" stroke="#1d1916" stroke-width="8"/>
+      <circle cx="40" cy="40" r="31" fill="none" stroke="url(#iron)" stroke-width="6"/>
+      <circle cx="40" cy="40" r="31" fill="none" stroke="url(#rust)" stroke-width="6" stroke-dasharray="7 23 3 31 11 19" opacity=".55"/>
+      <circle cx="40" cy="40" r="7.5" fill="url(#iron)" stroke="#1d1916" stroke-width="1.2"/>
+      <circle cx="40" cy="40" r="2.4" fill="#1d1916"/>
+      <circle cx="40" cy="9" r="4.2" fill="url(#rust)" stroke="#1d1916" stroke-width="1"/>
+    </g>
+  </svg>
+  <span class="gauge" id="gauge">flow</span>
+</div>
 <div class="fallback" id="fallback" hidden>This stream needs WebGL 2 with float render targets, which this browser isn't offering.</div>
 
 <script>
@@ -550,15 +576,42 @@ const up = () => { hand.down = false; };
 canvas.addEventListener('pointerup', up); canvas.addEventListener('pointercancel', up);
 addEventListener('contextmenu', e => e.preventDefault());
 const QMIN = .8, QMAX = 18;
-let meterTimer;
+// The sluice wheel: two full turns run from a trickle to a flood (logarithmic, so every quarter-turn feels alike).
+const TURNS = 720, wheel = $('wheel');
+let turnTimer;
+const flowFrac = () => Math.log(Q / QMIN) / Math.log(QMAX / QMIN);
 function showMeter() {
-  $('meterFill').style.height = `${(Math.log(Q / QMIN) / Math.log(QMAX / QMIN)) * 100}%`;
-  $('meter').classList.remove('gone'); clearTimeout(meterTimer); meterTimer = setTimeout(() => $('meter').classList.add('gone'), 1400);
+  const f = flowFrac();
+  $('dial').style.transform = `rotate(${f * TURNS}deg)`;
+  wheel.setAttribute('aria-valuenow', String(Math.round(f * 100)));
+  wheel.setAttribute('aria-valuetext', `${Math.round(f * 100)}% open`);
+  $('gauge').textContent = `${Math.round(f * 100)}% open`;
+  wheel.classList.add('turning'); clearTimeout(turnTimer); turnTimer = setTimeout(() => wheel.classList.remove('turning'), 1400);
 }
+function setFlowFrac(f) { f = Math.min(1, Math.max(0, f)); Q = QMIN * Math.pow(QMAX / QMIN, f); showMeter(); touched(); }
+function placeWheel() { if (GW) wheel.style.left = `${Math.min(cw - 44, Math.max(44, meander(GH - 1) / GW * cw))}px`; }
+let grip = null;
+wheel.addEventListener('pointerdown', e => {
+  e.stopPropagation(); initAudio(); wheel.setPointerCapture(e.pointerId);
+  const r = wheel.getBoundingClientRect();
+  grip = { cx: r.left + r.width / 2, cy: r.top + r.height / 2, a: Math.atan2(e.clientY - r.top - r.height / 2, e.clientX - r.left - r.width / 2), f: flowFrac() };
+});
+wheel.addEventListener('pointermove', e => {
+  if (!grip) return;
+  const a = Math.atan2(e.clientY - grip.cy, e.clientX - grip.cx);
+  let da = a - grip.a; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI;
+  grip.a = a; grip.f += da * 180 / Math.PI / TURNS;
+  grip.f = Math.min(1, Math.max(0, grip.f)); setFlowFrac(grip.f);
+});
+const letGo = () => { grip = null; };
+wheel.addEventListener('pointerup', letGo); wheel.addEventListener('pointercancel', letGo);
+wheel.addEventListener('keydown', e => {
+  const k = { ArrowRight: .04, ArrowUp: .04, ArrowLeft: -.04, ArrowDown: -.04, PageUp: .15, PageDown: -.15, Home: -1, End: 1 }[e.key];
+  if (k !== undefined) { e.preventDefault(); e.stopPropagation(); setFlowFrac(flowFrac() + k); }
+});
 addEventListener('wheel', e => {
   e.preventDefault();
-  Q = Math.min(QMAX, Math.max(QMIN, Q * Math.exp(-e.deltaY * .0012)));
-  showMeter(); touched();
+  setFlowFrac(flowFrac() - e.deltaY * .0006);
 }, { passive: false });
 addEventListener('keydown', e => {
   initAudio();
@@ -567,12 +620,12 @@ addEventListener('keydown', e => {
   if (e.key === '2') setTool('push');
   if (e.key === '3') setTool('dig');
   if (e.key === '4') setTool('water');
-  if (e.key === 'r' || e.key === 'R') { reset(true); prewarm(); }
-  if (e.key === 'ArrowUp') { Q = Math.min(QMAX, Q * 1.2); showMeter(); }
-  if (e.key === 'ArrowDown') { Q = Math.max(QMIN, Q / 1.2); showMeter(); }
+  if (e.key === 'r' || e.key === 'R') { reset(true); prewarm(); placeWheel(); }
+  if (e.key === 'ArrowUp') setFlowFrac(flowFrac() + .04);
+  if (e.key === 'ArrowDown') setFlowFrac(flowFrac() - .04);
 });
 addEventListener('keyup', e => { if (e.key === 'Shift') shift = false; });
-addEventListener('resize', resize);
+addEventListener('resize', () => { resize(); placeWheel(); });
 document.addEventListener('visibilitychange', () => { if (!AC) return; document.hidden ? AC.suspend() : AC.resume(); });
 let lastTouch = performance.now();
 function touched() { lastTouch = performance.now(); }
@@ -601,6 +654,7 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 resize();
+placeWheel(); showMeter(); wheel.classList.remove('turning');
 requestAnimationFrame(t => { last = t; frame(t); });
 
 // A measuring hook for local testing only (file://), never present on the published page.
