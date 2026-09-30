@@ -312,14 +312,14 @@ vec3 sand(vec2 uv, float shk){
   float dif = max(dot(N, SUN), 0.)*mix(1., texture(SH, uv).r, shk);
   vec4 s = S(uv);
   vec3 alb = mix(vec3(.8, .67, .49), vec3(.91, .81, .63), fbm(c*.045 + 3.));
-  alb *= .93 + .14*h(floor(uv*R*.8));
+  alb *= 1. + (shk > .5 ? .14 : .03)*(h(floor(uv*R*.8)) - .5);   // grain is barely visible through water
   alb = mix(vec3(.42, .36, .3), alb, smoothstep(.3, 2.5, s.x));
   float rk = rockMask(c);
   vec3 strata = mix(vec3(.52, .38, .29), vec3(.74, .6, .46), .5 + .5*sin(s.x*1.7 + fbm(c*.08)*3.));
   alb = mix(alb, strata*(.9 + .2*n2(c*.4)), rk);
   // bare canyon floor: water-worn cobbles; sand piled on it shows as sand
   float floorRock = step(.01, s.w)*(1. - rk)*(1. - smoothstep(.05, .4, s.x - s.w));
-  vec3 cob = mix(vec3(.36, .32, .28), vec3(.62, .55, .47), smoothstep(.3, .75, fbm(c*.9 + 4.)))*(.85 + .3*h(floor(c*2.)));
+  vec3 cob = mix(vec3(.36, .32, .28), vec3(.62, .55, .47), smoothstep(.3, .75, fbm(c*.9 + 4.)))*(.94 + .12*h(floor(c*2.)));
   alb = mix(alb, cob, floorRock);
   alb = mix(alb, alb*vec3(.55, .48, .41), s.z*.85*(1. - rk*.7));
   return alb*(.46 + .85*dif);
@@ -337,20 +337,20 @@ void main(){
     vec2 v = vv.xy; float sp = length(v);
     float ph = TIME*.35, p1 = fract(ph), p2 = fract(ph + .5), w = abs(p1*2. - 1.);
     vec2 q1 = c*.32 - v*p1*1.4, q2 = c*.32 - v*p2*1.4 + 7.3;
-    vec2 rip = mix(gradN(q1), gradN(q2), w)*(.04 + min(sp, 2.5)*.08);
+    vec2 rip = mix(gradN(q1), gradN(q2), w)*(.02 + min(sp, 2.5)*.035);
     vec3 N = normalize(vec3(-(gh*1.4 + rip), 1.));
     vec3 bed = sand(uv + N.xy*min(d, 3.)*.004, .35);
     vec2 cq = c*.22 + N.xy*2.;
-    float cz = pow(1. - abs(n2(cq + TIME*.18) - n2(cq*1.3 - TIME*.14 + 4.)), 7.);
-    bed += vec3(1., .93, .78)*cz*.4*exp(-d*.7)*smoothstep(.0, .15, d)*mix(1., texture(SH, uv).r, .35);
+    float cz = pow(1. - abs(n2(cq + TIME*.18) - n2(cq*1.3 - TIME*.14 + 4.)), 4.);
+    bed += vec3(1., .93, .78)*cz*.12*exp(-d*.7)*smoothstep(.0, .15, d)*mix(1., texture(SH, uv).r, .35);
     float mov = smoothstep(0., .02, vv.z)*(.55 + .45*fbm(q1*1.7 + 2.));
     vec3 T = exp(-d*vec3(.62, .26, .2)*1.4);
     vec3 wc = mix(bed, bed*vec3(1.05, .92, .75), mov*.6)*T + vec3(.05, .22, .24)*(1. - T);
     vec3 rd = reflect(vec3(0., 0., -1.), N);
     wc = mix(wc, vec3(.78, .87, .95), clamp((.02 + .98*pow(1. - N.z, 5.))*6., 0., .35));
-    wc += vec3(1., .96, .88)*pow(max(dot(rd, normalize(SUN)), 0.), 220.)*2.;
+    wc += vec3(1., .96, .88)*pow(max(dot(rd, normalize(SUN)), 0.), 60.)*.3;
     float fn = mix(fbm(q1*2.3), fbm(q2*2.3 + 3.), w);
-    float foam = smoothstep(.56, .8, fn)*smoothstep(1.8, 3.4, sp)*.7 + smoothstep(1.2, 2.6, length(gh))*smoothstep(.5, .75, fn)*.5;
+    float foam = smoothstep(.6, .85, fn)*smoothstep(2., 3.6, sp)*.35 + smoothstep(1.6, 3., length(gh))*smoothstep(.55, .8, fn)*.25;
     wc = mix(wc, vec3(.96, .95, .9), clamp(foam, 0., .8));
     col = mix(col, wc, smoothstep(.004, .05, d));
   }
